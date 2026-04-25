@@ -1,0 +1,77 @@
+services:
+  # Backend API Service
+  - type: web
+    name: ai-scientist-backend
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: |
+      cd backend
+      pip install -r requirements.txt
+    startCommand: |
+      cd backend
+      python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SEMANTIC_SCHOLAR_API_KEY
+        sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: LANGCHAIN_API_KEY
+        sync: false
+      - key: LANGCHAIN_TRACING_V2
+        value: "true"
+      - key: LANGCHAIN_ENDPOINT
+        value: "https://api.smith.langchain.com"
+      - key: LANGCHAIN_PROJECT
+        value: "ai-scientist-platform"
+      - key: CORS_ORIGINS
+        value: "https://ai-scientist-platform.vercel.app,http://localhost:3000"
+    autoDeploy: true
+    
+  # Database (if using Render PostgreSQL)
+  # - type: pserv
+  #   name: ai-scientist-db
+  #   env: postgresql
+  #   plan: starter
+  #   region: oregon
+  #   databases:
+  #     - name: ai_scientist_db
+  #       user: ai_scientist_user
+
+# Build settings
+buildFilter:
+  paths:
+    - backend/**
+  ignoredPaths:
+    - frontend/**
+    - README.md
+    - docs/**
+
+# Environment-specific configurations
+environments:
+  production:
+    envVars:
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DEBUG
+        value: "false"
+  
+  staging:
+    envVars:
+      - key: LOG_LEVEL
+        value: DEBUG
+      - key: DEBUG
+        value: "true"
