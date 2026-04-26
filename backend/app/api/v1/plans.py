@@ -185,17 +185,17 @@ async def execute_pipeline_and_store(
         plan_id = str(uuid.uuid4())
 
         # Insert into hypotheses table (sync Supabase client)
-        hypothesis_result = db.table("hypotheses").insert({
-            "id": plan_id,
-            "user_id": user_id,
-            "hypothesis_text": hypothesis,
-            "domain": experiment_plan.domain,
-            "status": "completed",
-            "created_at": datetime.utcnow().isoformat()
-        }).execute()
-
-        if not hypothesis_result.data:
-            raise Exception("Failed to insert hypothesis")
+        # Note: user_id FK references auth.users via Supabase, not our users table
+        try:
+            db.table("hypotheses").insert({
+                "id": plan_id,
+                "user_id": user_id,
+                "hypothesis_text": hypothesis,
+                "domain": experiment_plan.domain,
+                "validation_status": "valid",
+            }).execute()
+        except Exception as e:
+            logger.warning(f"Could not insert hypothesis record: {e} — continuing")
 
         # Insert into experiment_plans table
         plan_result = db.table("experiment_plans").insert({
@@ -203,8 +203,11 @@ async def execute_pipeline_and_store(
             "hypothesis_id": plan_id,
             "user_id": user_id,
             "plan_data": experiment_plan.model_dump(),
-            "status": "generated",
-            "created_at": datetime.utcnow().isoformat()
+            "novelty_classification": experiment_plan.novelty_classification.value,
+            "model_version": experiment_plan.metadata.model_version,
+            "few_shot_examples_used": experiment_plan.metadata.few_shot_examples_used,
+            "requires_expert_review": experiment_plan.metadata.requires_expert_review,
+            "status": "draft",
         }).execute()
 
         if not plan_result.data:
@@ -280,23 +283,31 @@ async def get_plan(
                 }
             )
         
-        plan_data = result.data[0]
-        
-        # Get average rating
-        rating_result = db.rpc(
-            "get_average_plan_rating",
-            {"plan_id_param": plan_id}
-        ).execute()
-        
-        average_rating = rating_result.data if rating_result.data else None
-        
-        # Parse plan data and add rating
-        experiment_plan = ExperimentPlan(**plan_data["plan_data"])
-        
-        # Add average rating to metadata if available
-        if average_rating:
+        plan_data_row = result.data[0]
+        raw_plan_data = plan_data_row.get("plan_data")
+        if not raw_plan_data:
+            raise HTTPException(
+                status_code=404,
+                detail={"error_code": "PLAN_DATA_MISSING", "message": "Plan data is empty"}
+            )
+
+        # Get average rating (graceful fallback)
+        try:
+            rating_result = db.rpc(
+                "get_average_plan_rating",
+                {"plan_id_param": plan_id}
+            ).execute()
+            average_rating = float(rating_result.data) if rating_result.data else None
+        except Exception:
+            average_rating = None
+
+        # Parse plan data
+        experiment_plan = ExperimentPlan(**raw_plan_data)
+
+        # Inject average rating into metadata if available
+        if average_rating is not None:
             experiment_plan.metadata.average_rating = average_rating
-        
+
         return experiment_plan
     
     except HTTPException:
@@ -341,9 +352,9 @@ async def list_plans(
         PaginatedResponse: Paginated list of plans
     """
     try:
-        # Build query
+        # Build query - select all columns, filter client-side for domain/budget
         query = db.table("experiment_plans").select(
-            "id, status, created_at, plan_data->domain, plan_data->materials->total_budget",
+            "id, status, generated_at, plan_data",
             count="exact"
         ).eq("user_id", current_user.id)
         
@@ -352,7 +363,7 @@ async def list_plans(
             query = query.eq("status", status)
         
         # Add pagination
-        query = query.range(offset, offset + limit - 1).order("created_at", desc=True)
+        query = query.range(offset, offset + limit - 1).order("generated_at", desc=True)
         
         # Execute query
         result = query.execute()
@@ -360,12 +371,13 @@ async def list_plans(
         # Format response
         plans = []
         for plan in result.data:
+            plan_data = plan.get("plan_data", {})
             plans.append({
                 "id": plan["id"],
                 "status": plan["status"],
-                "domain": plan.get("domain"),
-                "total_budget": plan.get("total_budget"),
-                "created_at": plan["created_at"]
+                "domain": plan_data.get("domain"),
+                "total_budget": plan_data.get("materials", {}).get("total_budget"),
+                "created_at": plan.get("generated_at") or plan.get("created_at"),
             })
         
         return PaginatedResponse(
@@ -423,11 +435,11 @@ async def submit_review(
     """
     try:
         # Verify plan exists and user has access
-        plan_result = db.table("experiment_plans").select(
+        plan_result_data = db.table("experiment_plans").select(
             "id, plan_data"
         ).eq("id", plan_id).eq("user_id", current_user.id).execute()
-        
-        if not plan_result.data:
+
+        if not plan_result_data.data:
             raise HTTPException(
                 status_code=404,
                 detail={
@@ -446,6 +458,7 @@ async def submit_review(
         overall_rating = sum(ratings) / len(ratings)
         
         # Insert review into database
+        # overall_rating is GENERATED ALWAYS AS computed column - don't insert it
         review_id = str(uuid.uuid4())
         review_result = db.table("reviews").insert({
             "id": review_id,
@@ -453,16 +466,17 @@ async def submit_review(
             "user_id": current_user.id,
             "protocol_rating": review.protocol_rating,
             "materials_rating": review.materials_rating,
+            "budget_rating": review.materials_rating,
             "timeline_rating": review.timeline_rating,
             "validation_rating": review.validation_rating,
-            "overall_rating": overall_rating,
-            "protocol_corrections": review.protocol_corrections,
-            "materials_corrections": review.materials_corrections,
-            "timeline_corrections": review.timeline_corrections,
-            "validation_corrections": review.validation_corrections,
-            "created_at": datetime.utcnow().isoformat()
+            "corrections": {
+                "protocol": review.protocol_corrections,
+                "materials": review.materials_corrections,
+                "timeline": review.timeline_corrections,
+                "validation": review.validation_corrections,
+            },
         }).execute()
-        
+
         if not review_result.data:
             raise Exception("Failed to insert review")
         
@@ -470,7 +484,7 @@ async def submit_review(
         background_tasks.add_task(
             generate_correction_embeddings,
             learning_engine=components["learning_engine"],
-            plan_data=plan_result.data[0]["plan_data"],
+            plan_data=plan_result_data.data[0]["plan_data"],
             review=review,
             review_id=review_id
         )
@@ -555,7 +569,7 @@ async def generate_correction_embeddings(
                 corrected_content=correction["correction"],
                 domain=plan_data.get("domain", "unknown"),
                 rating=correction["rating"],
-                review_id=review_id
+                review_id=review_id,
             )
             embeddings_count += 1
         

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 import { motion } from 'framer-motion';
@@ -19,10 +19,10 @@ import { useToast } from '@/components/ui/use-toast';
 type Tab = 'protocol' | 'materials' | 'timeline' | 'validation';
 
 export default function PlanDetailPage() {
-  const supabase = createBrowserClient(
+  const supabase = useMemo(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  ), []);
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();

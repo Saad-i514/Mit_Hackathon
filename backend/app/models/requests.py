@@ -1,8 +1,8 @@
 """
 Request models for API endpoints
 """
-from pydantic import BaseModel, Field, validator
-from typing import Optional, Dict
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional
 
 
 class GeneratePlanRequest(BaseModel):
@@ -13,71 +13,47 @@ class GeneratePlanRequest(BaseModel):
         min_length=20,
         max_length=5000
     )
-    user_id: Optional[str] = Field(
-        None,
-        description="User ID (optional, will be extracted from JWT if not provided)"
-    )
-    
-    @validator('hypothesis')
-    def validate_hypothesis(cls, v):
-        """Validate hypothesis is not empty or whitespace only"""
+
+    @field_validator('hypothesis')
+    @classmethod
+    def validate_hypothesis(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("Hypothesis cannot be empty or whitespace only")
         if len(v.strip()) < 20:
             raise ValueError("Hypothesis must be at least 20 characters long")
         return v.strip()
-    
-    class Config:
-        json_schema_extra = {
+
+    model_config = {
+        "json_schema_extra": {
             "example": {
-                "hypothesis": "Paper-based electrochemical biosensors can detect glucose at concentrations below 1 mM with 95% accuracy"
+                "hypothesis": "DMSO at 10% v/v will provide superior cryoprotection compared to glycerol for HeLa cells, resulting in ≥85% post-thaw viability measured by trypan blue exclusion."
             }
         }
+    }
 
 
 class ReviewSubmission(BaseModel):
-    """Request model for submitting a review"""
-    ratings: Dict[str, int] = Field(
-        ...,
-        description="Ratings for each section (1-5 scale)"
-    )
-    corrections: Dict[str, Dict[str, str]] = Field(
-        default_factory=dict,
-        description="Corrections for specific sections"
-    )
-    
-    @validator('ratings')
-    def validate_ratings(cls, v):
-        """Validate ratings are between 1 and 5"""
-        required_sections = ['protocol', 'materials', 'budget', 'timeline', 'validation']
-        
-        for section in required_sections:
-            if section not in v:
-                raise ValueError(f"Missing rating for section: {section}")
-            
-            rating = v[section]
-            if not isinstance(rating, int) or rating < 1 or rating > 5:
-                raise ValueError(f"Rating for {section} must be an integer between 1 and 5")
-        
-        return v
-    
-    class Config:
-        json_schema_extra = {
+    """Request model for submitting a plan review"""
+    protocol_rating: int = Field(..., ge=1, le=5, description="Protocol rating 1-5")
+    materials_rating: int = Field(..., ge=1, le=5, description="Materials rating 1-5")
+    timeline_rating: int = Field(..., ge=1, le=5, description="Timeline rating 1-5")
+    validation_rating: int = Field(..., ge=1, le=5, description="Validation rating 1-5")
+    protocol_corrections: Optional[str] = Field(None, description="Protocol corrections text")
+    materials_corrections: Optional[str] = Field(None, description="Materials corrections text")
+    timeline_corrections: Optional[str] = Field(None, description="Timeline corrections text")
+    validation_corrections: Optional[str] = Field(None, description="Validation corrections text")
+
+    model_config = {
+        "json_schema_extra": {
             "example": {
-                "ratings": {
-                    "protocol": 5,
-                    "materials": 4,
-                    "budget": 4,
-                    "timeline": 5,
-                    "validation": 4
-                },
-                "corrections": {
-                    "materials": {
-                        "original_issue": "Catalog number ABC123 not found",
-                        "correction": "Use catalog number XYZ789 from Thermo Fisher instead",
-                        "section": "materials",
-                        "item_index": "3"
-                    }
-                }
+                "protocol_rating": 4,
+                "materials_rating": 5,
+                "timeline_rating": 4,
+                "validation_rating": 5,
+                "protocol_corrections": "Step 3 should specify pH 7.4 buffer",
+                "materials_corrections": None,
+                "timeline_corrections": None,
+                "validation_corrections": None
             }
         }
+    }

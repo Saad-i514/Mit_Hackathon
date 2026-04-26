@@ -506,13 +506,17 @@ class AIPipeline:
             
             # Log metrics to LangSmith
             if final_state.get("experiment_plan"):
+                novelty_assessment = final_state.get("novelty_assessment")
+                novelty_value = "unknown"
+                if novelty_assessment and hasattr(novelty_assessment, "classification"):
+                    novelty_value = novelty_assessment.classification.value
                 self.langsmith_logger.log_pipeline_metrics(
                     run_id=run_id,
-                    hypothesis_id=user_id,  # Using user_id as hypothesis_id for now
+                    hypothesis_id=user_id,
                     total_duration=total_duration,
                     stage_durations=final_state.get("stage_durations", {}),
                     few_shot_examples_used=final_state.get("few_shot_examples_used", 0),
-                    novelty_classification=final_state.get("novelty_assessment", {}).get("classification", "unknown")
+                    novelty_classification=novelty_value
                 )
             
             logger.info(f"AI pipeline completed in {total_duration:.2f}s")

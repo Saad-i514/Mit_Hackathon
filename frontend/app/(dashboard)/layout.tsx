@@ -9,17 +9,17 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { FlaskConical, Plus, LogOut } from 'lucide-react';
 import { createBrowserClient } from '@supabase/ssr';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = createBrowserClient(
+  const supabase = useMemo(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  ), []);
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string | null>(null);
 

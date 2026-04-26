@@ -4,7 +4,6 @@ Handles feedback embeddings and similarity search for continuous improvement
 """
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 from supabase import Client
 from app.services.openai_client import OpenAIClient
 
@@ -55,64 +54,64 @@ class LearningEngine:
     
     async def embed_correction(
         self,
-        correction_text: str,
-        hypothesis_domain: str,
-        scientist_id: str,
-        plan_id: str,
+        section: str,
+        original_content: str,
+        corrected_content: str,
+        domain: str,
         rating: int,
-        original_issue: Optional[str] = None,
-        review_id: Optional[str] = None
+        review_id: Optional[str] = None,
+        plan_id: Optional[str] = None,
+        scientist_id: Optional[str] = None,
     ) -> str:
         """
-        Generate embedding for correction and store in vector database
-        
+        Generate embedding for a correction and store in vector database.
+
         Args:
-            correction_text: The correction text to embed
-            hypothesis_domain: Scientific domain
-            scientist_id: ID of the scientist who provided correction
-            plan_id: ID of the experiment plan
-            rating: Rating given to the section (1-5)
-            original_issue: Optional description of the original issue
+            section: Plan section (protocol, materials, timeline, validation_criteria)
+            original_content: Original plan content
+            corrected_content: Expert correction text
+            domain: Scientific domain
+            rating: Section rating (1-5)
             review_id: Optional review ID
-        
+            plan_id: Optional plan ID
+            scientist_id: Optional scientist/user ID
+
         Returns:
             str: ID of the stored embedding
-        
-        Raises:
-            Exception: If embedding generation or storage fails
         """
         try:
-            # Generate embedding with retry logic
+            correction_text = f"Section: {section}\nCorrection: {corrected_content}"
+            original_issue = f"Original: {original_content[:500]}" if original_content else None
+
             embedding_vector = await self.openai_client.generate_embedding(
                 text=correction_text,
                 max_retries=2
             )
-            
-            # Verify dimensionality
+
             if len(embedding_vector) != self.embedding_dimensions:
                 raise ValueError(
-                    f"Expected {self.embedding_dimensions} dimensions, "
-                    f"got {len(embedding_vector)}"
+                    f"Expected {self.embedding_dimensions} dimensions, got {len(embedding_vector)}"
                 )
-            
-            # Store in Supabase
-            result = self.supabase.table("feedback_embeddings").insert({
-                "review_id": review_id,
-                "plan_id": plan_id,
-                "scientist_id": scientist_id,
+
+            insert_data = {
                 "correction_text": correction_text,
                 "original_issue": original_issue,
                 "embedding": embedding_vector,
-                "hypothesis_domain": hypothesis_domain,
+                "hypothesis_domain": domain,
                 "rating": rating,
-                "created_at": datetime.utcnow().isoformat()
-            }).execute()
-            
+            }
+            if review_id:
+                insert_data["review_id"] = review_id
+            if plan_id:
+                insert_data["plan_id"] = plan_id
+            if scientist_id:
+                insert_data["scientist_id"] = scientist_id
+
+            result = self.supabase.table("feedback_embeddings").insert(insert_data).execute()
             embedding_id = result.data[0]["id"]
-            logger.info(f"Stored feedback embedding {embedding_id} for domain {hypothesis_domain}")
-            
+            logger.info(f"Stored feedback embedding {embedding_id} for domain {domain}")
             return embedding_id
-        
+
         except Exception as e:
             logger.error(f"Failed to embed and store correction: {e}")
             raise Exception(f"Embedding generation failed: {e}")
