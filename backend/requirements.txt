@@ -39,3 +39,24 @@ pytest-cov==5.0.0
 
 # Circuit Breaker
 circuitbreaker==2.0.0
+
+# ── Advanced Features ────────────────────────────────────────────────────────
+
+# XML parsing for PubMed and Europe PMC (F-01)
+lxml==5.3.0
+xmltodict==0.14.2
+
+# Retry logic for external API calls (F-01, F-03, F-04)
+tenacity==9.0.0
+
+# In-memory LRU cache for PubChem calls (F-02)
+cachetools==5.5.0
+
+# DOCX export for grant methods (F-11, F-12)
+python-docx==1.2.0
+
+# PDF generation for lab notebook (F-11, F-17)
+reportlab==4.2.5
+
+# iCal timeline export (F-11)
+icalendar==6.0.1

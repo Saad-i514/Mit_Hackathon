@@ -3,6 +3,7 @@ Configuration module for AI Scientist Platform
 Loads and validates environment variables
 """
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import List
 import os
 
@@ -19,6 +20,7 @@ class Settings(BaseSettings):
     supabase_anon_key: str
     supabase_service_key: str
     supabase_jwt_secret: str
+    supabase_db_password: str = ""
     
     # External APIs
     serper_api_key: str
@@ -35,9 +37,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     cors_origins: str = "http://localhost:3000"
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = ConfigDict(env_file=".env", case_sensitive=False)
     
     @property
     def cors_origins_list(self) -> List[str]:

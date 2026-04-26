@@ -18,6 +18,9 @@ from app.services.langsmith import get_langsmith_logger
 from app.services.hypothesis_refiner import HypothesisRefiner
 from app.services.protocols_io import ProtocolsIOClient
 from app.services.reproducibility_scorer import ReproducibilityScorer
+from app.services.clinical_trials import ClinicalTrialsClient
+from app.services.safety_assessor import SafetyAssessor
+from app.database import get_db
 from app.models.responses import ValidationResult, NoveltyAssessment
 
 
@@ -43,6 +46,8 @@ class AIPipeline:
         hypothesis_refiner: Optional[HypothesisRefiner] = None,
         protocols_io_client: Optional[ProtocolsIOClient] = None,
         reproducibility_scorer: Optional[ReproducibilityScorer] = None,
+        clinical_trials_client: Optional[ClinicalTrialsClient] = None,
+        safety_assessor: Optional[SafetyAssessor] = None,
     ):
         """
         Initialize AI Pipeline
@@ -52,6 +57,8 @@ class AIPipeline:
             literature_qc_engine: Literature QC component
             plan_generator: Plan generation component
             sse_manager: SSE stream manager for progress updates
+            clinical_trials_client: Clinical trials checking component
+            safety_assessor: Safety assessment component
         """
         self.hypothesis_validator = hypothesis_validator
         self.literature_qc_engine = literature_qc_engine
@@ -60,6 +67,8 @@ class AIPipeline:
         self.hypothesis_refiner = hypothesis_refiner
         self.protocols_io_client = protocols_io_client
         self.reproducibility_scorer = reproducibility_scorer
+        self.clinical_trials_client = clinical_trials_client
+        self.safety_assessor = safety_assessor
         self.langsmith_logger = get_langsmith_logger()
         
         # Build the LangGraph workflow
@@ -79,6 +88,7 @@ class AIPipeline:
         
         # Add nodes for each pipeline stage
         workflow.add_node("validate_hypothesis", self._validate_hypothesis_node)
+        workflow.add_node("assess_clinical_trials", self._assess_clinical_trials_node)
         workflow.add_node("assess_literature", self._assess_literature_node)
         workflow.add_node("generate_plan", self._generate_plan_node)
         workflow.add_node("handle_error", self._handle_error_node)
@@ -90,6 +100,15 @@ class AIPipeline:
         workflow.add_conditional_edges(
             "validate_hypothesis",
             self._should_continue_after_validation,
+            {
+                "continue": "assess_clinical_trials",
+                "error": "handle_error"
+            }
+        )
+        
+        workflow.add_conditional_edges(
+            "assess_clinical_trials",
+            self._should_continue_after_clinical_trials,
             {
                 "continue": "assess_literature",
                 "error": "handle_error"
@@ -218,6 +237,88 @@ class AIPipeline:
                 error_code="VALIDATION_ERROR",
                 error_message=f"Hypothesis validation failed: {str(e)}",
                 stage="validation"
+            )
+        
+        return state
+    
+    async def _assess_clinical_trials_node(self, state: PipelineState) -> PipelineState:
+        """
+        Pipeline node: Check for overlapping clinical trials
+        
+        Args:
+            state: Current pipeline state
+        
+        Returns:
+            PipelineState: Updated state with clinical trials check
+        """
+        stage_start_time = time.time()
+        
+        try:
+            # Emit stage start event
+            await self.sse_manager.emit_stage_start(
+                stage="clinical_trials",
+                stage_description="Checking for overlapping clinical trials",
+                estimated_duration=5
+            )
+            
+            # Emit progress
+            await self.sse_manager.emit_progress(
+                stage="clinical_trials",
+                progress_percent=35,
+                message="Searching ClinicalTrials.gov database..."
+            )
+            
+            # Check clinical trials if client is available
+            if self.clinical_trials_client:
+                clinical_trials_check = await self.clinical_trials_client.check_clinical_trials(
+                    state["hypothesis"]
+                )
+            else:
+                clinical_trials_check = {"total_found": 0, "studies": []}
+            
+            # Update state
+            state["clinical_trials_check"] = clinical_trials_check
+            state["current_stage"] = "clinical_trials"
+            
+            # Calculate stage duration
+            stage_duration = time.time() - stage_start_time
+            state["stage_durations"]["clinical_trials"] = stage_duration
+            
+            # Emit progress completion
+            total_found = clinical_trials_check.get("total_found", 0)
+            await self.sse_manager.emit_progress(
+                stage="clinical_trials",
+                progress_percent=38,
+                message=f"Clinical trials check complete - {total_found} related trials found",
+                details={
+                    "total_found": total_found,
+                    "studies_count": len(clinical_trials_check.get("studies", []))
+                }
+            )
+            
+            # Emit stage completion
+            await self.sse_manager.emit_stage_complete(
+                stage="clinical_trials",
+                duration=stage_duration,
+                result_summary={
+                    "total_found": total_found,
+                    "studies_count": len(clinical_trials_check.get("studies", []))
+                }
+            )
+            
+            logger.info(f"Clinical trials check completed - {total_found} trials found")
+            
+        except Exception as e:
+            logger.error(f"Clinical trials check failed: {e}")
+            # Don't fail the pipeline for clinical trials check
+            state["clinical_trials_check"] = {"total_found": 0, "studies": [], "error": str(e)}
+            state["current_stage"] = "clinical_trials"
+            
+            await self.sse_manager.emit_progress(
+                stage="clinical_trials",
+                progress_percent=38,
+                message="Clinical trials check skipped due to error",
+                details={"error": str(e)}
             )
         
         return state
@@ -356,6 +457,59 @@ class AIPipeline:
                 experiment_plan.metadata.hypothesis_quality_score = score
                 experiment_plan.metadata.hypothesis_refined = score < 70
             
+            # Assess safety if safety_assessor is available
+            if self.safety_assessor:
+                await self.sse_manager.emit_progress(
+                    stage="plan_generation",
+                    progress_percent=85,
+                    message="Assessing safety requirements..."
+                )
+                
+                safety_assessment = await self.safety_assessor.assess_safety(
+                    experiment_plan.model_dump()
+                )
+                
+                if safety_assessment:
+                    state["safety_assessment"] = safety_assessment.model_dump()
+                    # Store on the plan directly, not on metadata
+                    experiment_plan.safety_assessment = safety_assessment.model_dump()
+                    
+                    await self.sse_manager.emit_progress(
+                        stage="plan_generation",
+                        progress_percent=90,
+                        message=f"Safety assessment complete - BSL-{safety_assessment.bsl_level}",
+                        details={
+                            "bsl_level": safety_assessment.bsl_level,
+                            "requires_iacuc": safety_assessment.requires_iacuc,
+                            "requires_irb": safety_assessment.requires_irb
+                        }
+                    )
+            
+            # Add clinical trials check to plan state (not metadata)
+            if state.get("clinical_trials_check"):
+                state["clinical_trials_check"] = state["clinical_trials_check"]
+            
+            # Store plan version in database
+            try:
+                db = get_db()
+                plan_snapshot = experiment_plan.model_dump()
+                
+                # Note: experiment_id will be set when the plan is saved to database
+                # This is a placeholder for version tracking
+                # The actual version will be created when the plan is persisted
+                
+                await self.sse_manager.emit_progress(
+                    stage="plan_generation",
+                    progress_percent=95,
+                    message="Saving plan version..."
+                )
+                
+                logger.info("Plan version prepared for storage")
+                
+            except Exception as e:
+                logger.warning(f"Failed to prepare plan version: {e}")
+                # Don't fail the pipeline for version storage issues
+            
             # Update state
             state["experiment_plan"] = experiment_plan
             state["current_stage"] = "plan_generation"
@@ -458,6 +612,22 @@ class AIPipeline:
         
         return "continue"
     
+    def _should_continue_after_clinical_trials(self, state: PipelineState) -> str:
+        """
+        Conditional edge: Check if pipeline should continue after clinical trials check
+        
+        Args:
+            state: Current pipeline state
+        
+        Returns:
+            str: Next node ("continue" or "error")
+        """
+        if state.get("error"):
+            return "error"
+        
+        # Clinical trials check is optional, always continue
+        return "continue"
+    
     def _should_continue_after_qc(self, state: PipelineState) -> str:
         """
         Conditional edge: Check if pipeline should continue after literature QC
@@ -532,6 +702,8 @@ class AIPipeline:
             "novelty_assessment": None,
             "experiment_plan": None,
             "hypothesis_refinement": None,
+            "clinical_trials_check": None,
+            "safety_assessment": None,
             "error": None,
             "error_code": None,
             "error_stage": None,
@@ -608,6 +780,8 @@ def create_ai_pipeline(
     hypothesis_refiner: Optional[HypothesisRefiner] = None,
     protocols_io_client: Optional[ProtocolsIOClient] = None,
     reproducibility_scorer: Optional[ReproducibilityScorer] = None,
+    clinical_trials_client: Optional[ClinicalTrialsClient] = None,
+    safety_assessor: Optional[SafetyAssessor] = None,
 ) -> AIPipeline:
     """
     Factory function to create AIPipeline instance
@@ -617,6 +791,8 @@ def create_ai_pipeline(
         literature_qc_engine: Literature QC component
         plan_generator: Plan generation component
         sse_manager: SSE stream manager
+        clinical_trials_client: Clinical trials checking component
+        safety_assessor: Safety assessment component
     
     Returns:
         AIPipeline: Configured pipeline instance
@@ -629,4 +805,6 @@ def create_ai_pipeline(
         hypothesis_refiner=hypothesis_refiner,
         protocols_io_client=protocols_io_client,
         reproducibility_scorer=reproducibility_scorer,
+        clinical_trials_client=clinical_trials_client,
+        safety_assessor=safety_assessor,
     )

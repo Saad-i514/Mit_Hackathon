@@ -28,12 +28,14 @@ export interface ValidationResult {
 
 export interface Paper {
   title: string;
-  authors: string[];
+  authors?: string[];
   year?: number;
   abstract?: string;
   doi?: string;
   url?: string;
   venue?: string;
+  source?: string;
+  citation_count?: number;
 }
 
 export interface NoveltyAssessment {
@@ -86,6 +88,14 @@ export interface Material {
   product_url?: string;
   verification_status: "verified" | "pending_verification";
   alternatives: string[];
+  // PubChem enrichment fields
+  pubchem_found?: boolean;
+  cid?: number;
+  cas_number?: string;
+  molecular_weight?: number;
+  molecular_formula?: string;
+  ghs_codes?: string[];
+  pubchem_url?: string;
 }
 
 export interface Materials {
@@ -131,6 +141,10 @@ export interface ExperimentPlanMetadata {
   model_version: string;
   few_shot_examples_used: number;
   requires_expert_review: string[];
+  hypothesis_quality_score?: number;
+  hypothesis_refined?: boolean;
+  protocols_io_matches?: Array<Record<string, any>>;
+  reproducibility_assessment?: Record<string, any>;
   average_rating?: number;
 }
 
@@ -143,6 +157,10 @@ export interface ExperimentPlan {
   materials: Materials;
   timeline: Timeline;
   validation_criteria: ValidationCriteria;
+  power_analysis?: PowerAnalysis;
+  safety_assessment?: SafetyAssessment;
+  variants?: ProtocolVariants;
+  equipment_required?: Array<Record<string, any>>;
   metadata: ExperimentPlanMetadata;
 }
 
@@ -356,3 +374,209 @@ export interface ErrorState {
 export type PlanStatus = "draft" | "generating" | "completed" | "failed";
 export type StageType = "validation" | "literature_qc" | "plan_generation";
 export type RatingValue = 1 | 2 | 3 | 4 | 5;
+
+// ============================================================================
+// Advanced Features Types (Phase 6)
+// ============================================================================
+
+// Safety Assessment Types
+export interface HazardousReagent {
+  name: string;
+  ghs_codes: string[];
+  hazard: string;
+  ppe_addition: string;
+  disposal: string;
+}
+
+export interface SafetyAssessment {
+  bsl_level: number; // 1-4
+  bsl_rationale: string;
+  requires_iacuc: boolean;
+  requires_irb: boolean;
+  requires_biosafety_committee: boolean;
+  ppe_required: string[];
+  hazardous_reagents: HazardousReagent[];
+  waste_disposal: Record<string, string>;
+  emergency_contacts: string[];
+}
+
+// Protocol Variants Types
+export interface ProtocolVariant {
+  name: string; // "Budget", "Standard", "Premium"
+  total_budget: number;
+  timeline_days: number;
+  description: string;
+  materials: Materials;
+  protocol_modifications: string[];
+}
+
+export interface ProtocolVariants {
+  budget: ProtocolVariant;
+  standard: ProtocolVariant;
+  premium: ProtocolVariant;
+}
+
+// Power Analysis Types
+export interface PowerAnalysis {
+  test_type: string; // "t-test", "ANOVA", "chi-squared", "log-rank"
+  effect_size: number;
+  alpha: number;
+  power: number;
+  sample_size: number;
+  interpretation: string;
+}
+
+// Equipment Types
+export interface EquipmentItem {
+  equipment: string;
+  has_item: boolean;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Plan Version Types
+export interface PlanVersion {
+  version_number: number;
+  plan_snapshot?: ExperimentPlan;
+  change_summary?: string;
+  triggered_by: "initial_generation" | "scientist_correction" | "hypothesis_edit" | "manual_regen";
+  created_at: string;
+}
+
+// Plan Annotation Types
+export interface PlanAnnotation {
+  id: string;
+  plan_id: string;
+  section: string;
+  content: string;
+  position_pct?: number;
+  author_id?: string;
+  author_role?: string;
+  created_at: string;
+}
+
+// Clinical Trial Types
+export interface ClinicalTrialStudy {
+  nct_id: string;
+  title: string;
+  status: string;
+  phase: string;
+  url: string;
+}
+
+export interface ClinicalTrialResult {
+  total_found: number;
+  studies: ClinicalTrialStudy[];
+  error?: string;
+}
+
+// Grant Methods Types
+export interface GrantMethodsResult {
+  grant_body: "NIH" | "NSF" | "ERC";
+  methods_text: string;
+  generated_at: string;
+}
+
+// Notebook Template Types
+export interface NotebookSection {
+  title: string;
+  content: string;
+  fields?: Record<string, string>;
+}
+
+export interface NotebookTemplate {
+  title: string;
+  hypothesis: string;
+  date: string;
+  sections: NotebookSection[];
+  materials_log: Array<{
+    material: string;
+    lot_number: string;
+    received_date: string;
+    expiry_date: string;
+  }>;
+  protocol_checklist: Array<{
+    step: string;
+    completed: boolean;
+    observations: string;
+    timestamp: string;
+  }>;
+  data_tables: Array<{
+    table_name: string;
+    columns: string[];
+    rows: Array<Record<string, any>>;
+  }>;
+  statistical_analysis: {
+    test_type: string;
+    results: string;
+    interpretation: string;
+  };
+  conclusions: string;
+  deviations: string[];
+}
+
+// Component Props for Advanced Features
+export interface PowerCalculatorProps {
+  initialValues?: PowerAnalysis;
+  onCalculate: (analysis: PowerAnalysis) => void;
+}
+
+export interface ProtocolFlowchartProps {
+  protocol: Protocol;
+  onNodeClick?: (stepNumber: number) => void;
+}
+
+export interface GanttTimelineProps {
+  timeline: Timeline;
+  onTaskClick?: (phaseNumber: number) => void;
+  onReschedule?: (phaseNumber: number, newStartDate: string) => void;
+}
+
+export interface ExportSuiteProps {
+  plan: ExperimentPlan;
+  onExport: (format: "pdf" | "csv" | "ical" | "docx") => void;
+}
+
+export interface GrantMethodsProps {
+  planId: string;
+  onGenerate: (grantBody: "NIH" | "NSF" | "ERC") => void;
+}
+
+export interface EquipmentChecklistProps {
+  planId: string;
+  equipment: string[];
+  onUpdate: (equipment: string, hasItem: boolean, notes?: string) => void;
+}
+
+export interface SafetyTabProps {
+  safetyAssessment: SafetyAssessment;
+}
+
+export interface CollaborativeReviewProps {
+  planId: string;
+  onAnnotate: (annotation: Omit<PlanAnnotation, "id" | "created_at">) => void;
+}
+
+export interface VersionHistoryProps {
+  planId: string;
+  versions: PlanVersion[];
+  onRestore: (versionNumber: number) => void;
+  onCompare: (version1: number, version2: number) => void;
+}
+
+export interface VariantSelectorProps {
+  variants: ProtocolVariants;
+  selectedVariant: "budget" | "standard" | "premium";
+  onSelect: (variant: "budget" | "standard" | "premium") => void;
+}
+
+export interface ClinicalTrialsBadgeProps {
+  clinicalTrials: ClinicalTrialResult;
+}
+
+export interface NotebookExportProps {
+  planId: string;
+  onGenerate: () => void;
+  onExport: (format: "pdf") => void;
+}

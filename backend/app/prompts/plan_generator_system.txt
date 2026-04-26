@@ -125,6 +125,70 @@ Return ONLY valid JSON matching this exact structure (no additional text):
     ],
     "validation_methods": ["Statistical analysis using t-test (p < 0.05)", "Technical replicates (n=3)"]
   },
+  "power_analysis": {
+    "recommended_test": "two_sample_t_test",
+    "suggested_effect_size": 0.8,
+    "effect_size_rationale": "Based on prior literature effect sizes.",
+    "suggested_alpha": 0.05,
+    "suggested_power": 0.80,
+    "calculated_n_per_group": 26,
+    "total_sample_size": 52
+  },
+  "safety_assessment": {
+    "bsl_level": 2,
+    "bsl_rationale": "Cell line handling requires BSL-2 practices.",
+    "requires_iacuc": false,
+    "requires_irb": false,
+    "requires_biosafety_committee": true,
+    "ppe_required": ["nitrile gloves", "lab coat", "safety glasses"],
+    "hazardous_reagents": [
+      {
+        "name": "DMSO",
+        "ghs_codes": ["H360"],
+        "hazard": "Reproductive toxicity concern",
+        "ppe_addition": "chemical splash goggles",
+        "disposal": "chemical waste stream"
+      }
+    ],
+    "waste_disposal": {
+      "biological": "Autoclave before disposal",
+      "chemical": "Dispose per institutional EH&S SOP",
+      "sharps": "Approved sharps container"
+    }
+  },
+  "variants": {
+    "budget": {
+      "total_cost_usd": 850,
+      "timeline_weeks": 6,
+      "key_tradeoffs": "Lower-cost reagents with modest sensitivity reduction",
+      "protocol": [],
+      "materials": []
+    },
+    "standard": {
+      "total_cost_usd": 1800,
+      "timeline_weeks": 5,
+      "protocol": [],
+      "materials": []
+    },
+    "premium": {
+      "total_cost_usd": 4200,
+      "timeline_weeks": 4,
+      "key_advantages": "Higher sensitivity and robustness",
+      "protocol": [],
+      "materials": []
+    }
+  },
+  "equipment_required": [
+    {
+      "name": "CO2 Incubator",
+      "category": "Cell culture",
+      "model_suggestion": "Thermo Scientific Heracell 150i",
+      "est_purchase_usd": 8500,
+      "is_commonly_available": true,
+      "core_facility_alternative": null,
+      "rental_available": false
+    }
+  ],
   "metadata": {
     "generated_at": "2024-01-15T10:00:00Z",
     "model_version": "gpt-4o",

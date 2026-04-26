@@ -18,8 +18,8 @@ async def check_database() -> dict:
     try:
         start = time.time()
         db = get_db()
-        # Simple query to test connection
-        result = db.table("users").select("id").limit(1).execute()
+        # Simple query to test connection using experiment_plans table
+        result = db.table("experiment_plans").select("id").limit(1).execute()
         latency = (time.time() - start) * 1000
         return {
             "status": "healthy",

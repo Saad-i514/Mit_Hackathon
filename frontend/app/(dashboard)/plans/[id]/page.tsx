@@ -10,13 +10,27 @@ import {
   ArrowLeft, Loader2, AlertCircle, FlaskConical,
   BookOpen, DollarSign, Clock, CheckCircle2, Shield,
   ExternalLink, Copy, Check, ChevronDown, ChevronUp,
-  Star, AlertTriangle, Microscope
+  Star, AlertTriangle, Microscope, History, Users
 } from 'lucide-react';
 import { getApiUrl, API_ENDPOINTS } from '@/lib/config';
-import { ExperimentPlan, NoveltyClassification } from '@/lib/types';
+import { ExperimentPlan, NoveltyClassification, SafetyAssessment, PlanVersion, ClinicalTrialResult, ProtocolVariants } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
 
-type Tab = 'protocol' | 'materials' | 'timeline' | 'validation';
+// Import new components
+import { PowerCalculator } from '@/components/plan-viewer/power-calculator';
+import { ProtocolFlowchart } from '@/components/plan-viewer/protocol-flowchart';
+import { GanttTimeline } from '@/components/plan-viewer/gantt-timeline';
+import { ExportSuite } from '@/components/plan-viewer/export-suite';
+import { GrantMethods } from '@/components/plan-viewer/grant-methods';
+import { EquipmentChecklist } from '@/components/plan-viewer/equipment-checklist';
+import { SafetyTab } from '@/components/plan-viewer/safety-tab';
+import { CollaborativeReview } from '@/components/plan-viewer/collaborative-review';
+import { VersionHistory } from '@/components/plan-viewer/version-history';
+import { VariantSelector } from '@/components/plan-viewer/variant-selector';
+import { ClinicalTrialsBadge } from '@/components/plan-viewer/clinical-trials-badge';
+import { NotebookExport } from '@/components/plan-viewer/notebook-export';
+
+type Tab = 'protocol' | 'materials' | 'timeline' | 'validation' | 'safety' | 'grant' | 'equipment' | 'notebook';
 
 export default function PlanDetailPage() {
   const supabase = useMemo(() => createBrowserClient(
@@ -34,6 +48,14 @@ export default function PlanDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>('protocol');
   const [copiedStep, setCopiedStep] = useState<number | null>(null);
   const [expandedStep, setExpandedStep] = useState<number | null>(null);
+  
+  // New state for advanced features
+  const [versions, setVersions] = useState<PlanVersion[]>([]);
+  const [safetyAssessment, setSafetyAssessment] = useState<SafetyAssessment | null>(null);
+  const [clinicalTrials, setClinicalTrials] = useState<ClinicalTrialResult | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<'budget' | 'standard' | 'premium'>('standard');
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showCollabReview, setShowCollabReview] = useState(false);
 
   useEffect(() => {
     if (!planId) return;
@@ -48,6 +70,11 @@ export default function PlanDetailPage() {
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         const data = await res.json();
         setPlan(data);
+        
+        // Load additional data
+        loadVersions(session.access_token);
+        loadSafetyAssessment(data);
+        loadClinicalTrials(data);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load plan');
       } finally {
@@ -55,6 +82,33 @@ export default function PlanDetailPage() {
       }
     })();
   }, [planId, supabase, router]);
+  
+  const loadVersions = async (token: string) => {
+    try {
+      const res = await fetch(getApiUrl(API_ENDPOINTS.getVersions(planId)), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVersions(data.versions || []);
+      }
+    } catch (e) {
+      console.error('Failed to load versions:', e);
+    }
+  };
+  
+  const loadSafetyAssessment = (planData: ExperimentPlan) => {
+    if (planData.safety_assessment) {
+      setSafetyAssessment(planData.safety_assessment as SafetyAssessment);
+    }
+  };
+  
+  const loadClinicalTrials = (planData: ExperimentPlan) => {
+    // Extract clinical trials from plan metadata if available
+    if (planData.metadata && (planData.metadata as any).clinical_trials_check) {
+      setClinicalTrials((planData.metadata as any).clinical_trials_check);
+    }
+  };
 
   const copyStep = async (text: string, stepNum: number) => {
     await navigator.clipboard.writeText(text);
@@ -74,6 +128,10 @@ export default function PlanDetailPage() {
     { id: 'materials',  label: 'Materials',  icon: DollarSign },
     { id: 'timeline',   label: 'Timeline',   icon: Clock },
     { id: 'validation', label: 'Validation', icon: CheckCircle2 },
+    { id: 'safety',     label: 'Safety',     icon: Shield },
+    { id: 'grant',      label: 'Grant Language', icon: BookOpen },
+    { id: 'equipment',  label: 'Equipment',  icon: FlaskConical },
+    { id: 'notebook',   label: 'Notebook',   icon: BookOpen },
   ];
 
   if (loading) return (
@@ -109,6 +167,38 @@ export default function PlanDetailPage() {
           <ArrowLeft className="h-4 w-4 mr-2" /> Back to Plans
         </Button>
 
+        {/* Version History Rail */}
+        {versions.length > 0 && (
+          <div className="mb-4">
+            <VersionHistory
+              planId={planId}
+              versions={versions}
+              onRestore={async (versionNumber) => {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session) return;
+                const res = await fetch(getApiUrl(API_ENDPOINTS.restoreVersion(planId, versionNumber)), {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${session.access_token}` }
+                });
+                if (res.ok) {
+                  const refreshed = await fetch(getApiUrl(API_ENDPOINTS.getPlan(planId)), {
+                    headers: { Authorization: `Bearer ${session.access_token}` }
+                  });
+                  if (refreshed.ok) {
+                    const data = await refreshed.json();
+                    setPlan(data);
+                    loadSafetyAssessment(data);
+                  }
+                  toast({ title: 'Version Restored', description: 'Plan has been restored to selected version' });
+                }
+              }}
+              onCompare={(v1, v2) => {
+                toast({ title: 'Compare Mode', description: `Comparing version ${v1} with version ${v2}` });
+              }}
+            />
+          </div>
+        )}
+
         {/* Plan header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -126,6 +216,39 @@ export default function PlanDetailPage() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
+              {/* Collaboration Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCollabReview(!showCollabReview)}
+                className="flex items-center gap-2"
+              >
+                <Users className="h-4 w-4" />
+                {showCollabReview ? 'Hide' : 'Show'} Review
+              </Button>
+              
+              {/* Version History Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowVersionHistory(!showVersionHistory)}
+                className="flex items-center gap-2"
+              >
+                <History className="h-4 w-4" />
+                History
+              </Button>
+              
+              {/* Export Suite */}
+              <ExportSuite
+                plan={plan}
+                onExport={(format) => {
+                  toast({ title: 'Exporting...', description: `Exporting plan as ${format.toUpperCase()}` });
+                }}
+              />
+              
+              {/* Clinical Trials Badge */}
+              {clinicalTrials && <ClinicalTrialsBadge clinicalTrials={clinicalTrials} />}
+              
               <Badge className={`border ${nb.color}`}>{nb.label}</Badge>
               {plan.metadata.few_shot_examples_used > 0 && (
                 <Badge className="bg-purple-100 text-purple-700 border-purple-200 border">
@@ -197,6 +320,24 @@ export default function PlanDetailPage() {
           {/* ── Protocol Tab ── */}
           {activeTab === 'protocol' && (
             <div className="space-y-3">
+              {/* Variant Selector */}
+              {plan.variants && (
+                <VariantSelector
+                  variants={plan.variants as ProtocolVariants}
+                  selectedVariant={selectedVariant}
+                  onSelect={setSelectedVariant}
+                />
+              )}
+              
+              {/* Protocol Flowchart */}
+              <ProtocolFlowchart
+                protocol={plan.protocol}
+                onNodeClick={(stepNum) => {
+                  setExpandedStep(stepNum - 1);
+                  toast({ title: 'Step Selected', description: `Viewing step ${stepNum}` });
+                }}
+              />
+              
               {plan.protocol.safety_considerations.length > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-2 font-medium text-amber-800">
@@ -355,6 +496,17 @@ export default function PlanDetailPage() {
           {/* ── Timeline Tab ── */}
           {activeTab === 'timeline' && (
             <div className="space-y-3">
+              {/* Gantt Timeline */}
+              <GanttTimeline
+                timeline={plan.timeline}
+                onTaskClick={(phaseNum) => {
+                  toast({ title: 'Phase Selected', description: `Viewing phase ${phaseNum}` });
+                }}
+                onReschedule={(phaseNum, newDate) => {
+                  toast({ title: 'Rescheduled', description: `Phase ${phaseNum} moved to ${newDate}` });
+                }}
+              />
+              
               <div className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm p-4 mb-4">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-foreground">Total Duration</span>
@@ -406,6 +558,16 @@ export default function PlanDetailPage() {
           {/* ── Validation Tab ── */}
           {activeTab === 'validation' && (
             <div className="space-y-4">
+              {/* Power Calculator */}
+              {plan.power_analysis && (
+                <PowerCalculator
+                  initialValues={plan.power_analysis as any}
+                  onCalculate={(analysis) => {
+                    toast({ title: 'Power Analysis Updated', description: `Sample size: ${analysis.sample_size}` });
+                  }}
+                />
+              )}
+              
               <div className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm p-5">
                 <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                   <CheckCircle2 className="h-5 w-5 text-green-600" /> Success Criteria
@@ -459,8 +621,118 @@ export default function PlanDetailPage() {
               )}
             </div>
           )}
+          
+          {/* ── Safety Tab ── */}
+          {activeTab === 'safety' && (
+            <div>
+              {safetyAssessment ? (
+                <SafetyTab safetyAssessment={safetyAssessment} />
+              ) : (
+                <div className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm p-8 text-center">
+                  <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-muted-foreground">No safety assessment available for this plan.</p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* ── Grant Language Tab ── */}
+          {activeTab === 'grant' && (
+            <div>
+              <GrantMethods
+                planId={planId}
+                onGenerate={(grantBody) => {
+                  toast({ title: 'Generating...', description: `Creating ${grantBody} grant methods section` });
+                }}
+              />
+            </div>
+          )}
+          
+          {/* ── Equipment Tab ── */}
+          {activeTab === 'equipment' && (
+            <div>
+              <EquipmentChecklist
+                planId={planId}
+                equipment={extractEquipmentList(plan)}
+                onUpdate={(equipment, hasItem, notes) => {
+                  toast({ title: 'Updated', description: `Equipment status updated for ${equipment}` });
+                }}
+              />
+            </div>
+          )}
+          
+          {/* ── Notebook Tab ── */}
+          {activeTab === 'notebook' && (
+            <div>
+              <NotebookExport
+                planId={planId}
+                onGenerate={() => {
+                  toast({ title: 'Generating...', description: 'Creating lab notebook template' });
+                }}
+                onExport={(format) => {
+                  toast({ title: 'Exporting...', description: `Exporting notebook as ${format.toUpperCase()}` });
+                }}
+              />
+            </div>
+          )}
         </motion.div>
+        
+        {/* Collaborative Review Sidebar */}
+        {showCollabReview && (
+          <div className="fixed right-0 top-0 h-full w-96 bg-background/95 backdrop-blur-md border-l border-white/10 shadow-2xl z-50 overflow-y-auto">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-foreground">Collaborative Review</h2>
+                <Button variant="ghost" size="sm" onClick={() => setShowCollabReview(false)}>
+                  ✕
+                </Button>
+              </div>
+              <CollaborativeReview
+                planId={planId}
+                onAnnotate={(annotation) => {
+                  toast({ title: 'Annotation Added', description: 'Your comment has been saved' });
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+// Helper function to extract equipment list from plan
+function extractEquipmentList(plan: ExperimentPlan): string[] {
+  const equipment: Set<string> = new Set();
+  
+  // Prefer explicit equipment list from backend payload.
+  if (Array.isArray(plan.equipment_required)) {
+    plan.equipment_required.forEach((item: any) => {
+      if (typeof item === 'string') equipment.add(item);
+      else if (item?.name) equipment.add(item.name);
+    });
+  }
+  
+  // Extract from protocol steps
+  plan.protocol.steps.forEach(step => {
+    // Look for equipment mentions in critical parameters
+    Object.keys(step.critical_parameters).forEach(key => {
+      if (key.toLowerCase().includes('equipment') || key.toLowerCase().includes('instrument')) {
+        equipment.add(step.critical_parameters[key]);
+      }
+    });
+  });
+  
+  // Extract from materials (some materials might be equipment)
+  plan.materials.items.forEach(item => {
+    if (item.name.toLowerCase().includes('microscope') ||
+        item.name.toLowerCase().includes('centrifuge') ||
+        item.name.toLowerCase().includes('incubator') ||
+        item.name.toLowerCase().includes('spectrophotometer') ||
+        item.name.toLowerCase().includes('thermocycler')) {
+      equipment.add(item.name);
+    }
+  });
+  
+  return Array.from(equipment);
 }

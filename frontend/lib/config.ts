@@ -40,6 +40,13 @@ export const API_ENDPOINTS = {
   getPlan: (id: string) => `/api/v1/plans/${id}`,
   listPlans: '/api/v1/plans',
   submitReview: (id: string) => `/api/v1/plans/${id}/reviews`,
+  
+  // Advanced features
+  getVersions: (id: string) => `/api/v1/plans/${id}/versions`,
+  restoreVersion: (id: string, versionNumber: number) => `/api/v1/plans/${id}/restore/${versionNumber}`,
+  generateGrantMethods: (id: string) => `/api/v1/plans/${id}/grant-methods`,
+  generateNotebook: (id: string) => `/api/v1/plans/${id}/notebook`,
+  updateEquipment: (name: string) => `/api/v1/plans/equipment/${encodeURIComponent(name)}`,
 } as const;
 
 // SSE endpoints

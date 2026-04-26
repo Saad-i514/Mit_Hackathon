@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, AsyncGenerator
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel
+from sse_starlette.sse import ServerSentEvent
 
 
 logger = logging.getLogger(__name__)
@@ -29,10 +30,10 @@ class SSEEvent(BaseModel):
     timestamp: str
     data: Dict[str, Any]
     
-    def to_sse_format(self) -> str:
-        """Convert to raw SSE string format."""
+    def to_sse_event(self) -> ServerSentEvent:
+        """Convert to sse_starlette ServerSentEvent."""
         payload = json.dumps(self.model_dump())
-        return f"event: {self.event_type.value}\ndata: {payload}\n\n"
+        return ServerSentEvent(data=payload, event=self.event_type.value)
 
 
 class SSEManager:
@@ -204,12 +205,10 @@ class SSEManager:
         except asyncio.QueueFull:
             logger.warning(f"SSE event queue full, dropping {event_type} event")
     
-    async def event_stream(self) -> AsyncGenerator[str, None]:
+    async def event_stream(self) -> AsyncGenerator[ServerSentEvent, None]:
         """
-        Async generator for SSE event consumption
-        
-        Yields:
-            str: SSE-formatted event strings
+        Async generator for SSE event consumption.
+        Yields ServerSentEvent objects consumed by sse_starlette EventSourceResponse.
         """
         self._connection_count += 1
         connection_id = self._connection_count
@@ -225,8 +224,8 @@ class SSEManager:
                         timeout=1.0
                     )
                     
-                    # Yield raw SSE event string
-                    yield event.to_sse_format()
+                    # Yield properly formatted ServerSentEvent
+                    yield event.to_sse_event()
                     
                     # Mark task as done
                     self.event_queue.task_done()
@@ -236,13 +235,12 @@ class SSEManager:
                         break
                 
                 except asyncio.TimeoutError:
-                    # Send keep-alive comment to prevent connection timeout
-                    yield ": keep-alive\n\n"
+                    # Send keep-alive ping to prevent connection timeout
+                    yield ServerSentEvent(comment="keep-alive")
                     continue
         
         except Exception as e:
             logger.error(f"SSE stream error (connection {connection_id}): {e}")
-            # Send error event before closing
             error_event = SSEEvent(
                 event_type=EventType.ERROR,
                 timestamp=datetime.utcnow().isoformat(),
@@ -252,7 +250,7 @@ class SSEManager:
                     "details": {"error": str(e)}
                 }
             )
-            yield error_event.to_sse_format()
+            yield error_event.to_sse_event()
         
         finally:
             logger.info(f"SSE stream ended (connection {connection_id})")

@@ -43,11 +43,13 @@ class ValidationResult(BaseModel):
 class Paper(BaseModel):
     """Scientific paper from literature search"""
     title: str
+    authors: Optional[List[str]] = None
     doi: Optional[str] = None
     year: Optional[int] = None
     citation_count: Optional[int] = None
     abstract: Optional[str] = None
     url: Optional[str] = None
+    venue: Optional[str] = None
     source: Optional[str] = None
 
 
@@ -96,7 +98,14 @@ class Material(BaseModel):
     total_price: float
     product_url: Optional[str] = None
     verification_status: str = "verified"
-    alternatives: List['Material'] = Field(default_factory=list)
+    pubchem_found: Optional[bool] = None
+    cid: Optional[int] = None
+    cas_number: Optional[str] = None
+    molecular_weight: Optional[float] = None
+    molecular_formula: Optional[str] = None
+    ghs_codes: List[str] = Field(default_factory=list)
+    pubchem_url: Optional[str] = None
+    alternatives: List[Any] = Field(default_factory=list)
 
 
 class Phase(BaseModel):
@@ -176,6 +185,7 @@ class ExperimentPlanMetadata(BaseModel):
     hypothesis_refined: bool = False
     protocols_io_matches: List[Dict[str, Any]] = Field(default_factory=list)
     reproducibility_assessment: Optional[Dict[str, Any]] = None
+    average_rating: Optional[float] = None
 
 
 class ExperimentPlan(BaseModel):
@@ -187,6 +197,10 @@ class ExperimentPlan(BaseModel):
     materials: Materials
     timeline: Timeline
     validation_criteria: ValidationCriteria
+    power_analysis: Optional[Dict[str, Any]] = None
+    safety_assessment: Optional[Dict[str, Any]] = None
+    variants: Optional[Dict[str, Any]] = None
+    equipment_required: List[Dict[str, Any]] = Field(default_factory=list)
     metadata: ExperimentPlanMetadata
 
 

@@ -245,11 +245,11 @@ export default function NewPlanPage() {
         buffer = lines.pop() ?? '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          const trimmed = line.replace(/\r$/, '');
+          if (trimmed.startsWith('data: ')) {
             try {
-              const raw = JSON.parse(line.slice(6));
+              const raw = JSON.parse(trimmed.slice(6));
               // Backend wraps in {event_type, timestamp, data}
-              // but the data field itself contains the payload
               handleSSEEvent(raw as SSEEvent);
             } catch {
               // skip malformed

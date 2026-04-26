@@ -26,6 +26,8 @@ from app.services.serper import get_serper_client, SerperClient
 from app.services.protocols_io import get_protocols_io_client, ProtocolsIOClient
 from app.services.hypothesis_refiner import get_hypothesis_refiner, HypothesisRefiner
 from app.services.reproducibility_scorer import get_reproducibility_scorer, ReproducibilityScorer
+from app.services.grant_methods import get_grant_methods_generator, GrantMethodsGenerator
+from app.services.notebook_generator import get_notebook_generator, NotebookGenerator
 from app.graph.ai_pipeline import create_ai_pipeline, AIPipeline
 from app.utils.monitoring import metrics, PipelineTimer
 from supabase import Client as AsyncClient
@@ -601,3 +603,395 @@ async def generate_correction_embeddings(
     
     except Exception as e:
         logger.error(f"Failed to generate correction embeddings for review {review_id}: {e}")
+
+
+
+@router.post(
+    "/{plan_id}/grant-methods",
+    summary="Generate grant Methods section",
+    description="Generate a formal grant Methods section from an experiment plan for NIH, NSF, or ERC submissions.",
+    responses={
+        404: {"description": "Plan not found"},
+    },
+    tags=["Plans"]
+)
+async def generate_grant_methods(
+    plan_id: str,
+    grant_body: str = Query("NIH", description="Grant body: NIH, NSF, or ERC"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    openai_client: OpenAIClient = Depends(get_openai_client),
+    db: AsyncClient = Depends(get_db_session)
+) -> Dict[str, Any]:
+    """
+    Generate grant Methods section
+    
+    Args:
+        plan_id: Plan ID
+        grant_body: Grant body (NIH, NSF, or ERC)
+        current_user: Authenticated user
+        openai_client: OpenAI client
+        db: Database session
+    
+    Returns:
+        Dict: Grant Methods section text
+    """
+    try:
+        # Fetch plan from database
+        result = db.table("experiment_plans").select(
+            "plan_data"
+        ).eq("id", plan_id).eq("user_id", current_user.id).execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "PLAN_NOT_FOUND",
+                    "message": "Experiment plan not found"
+                }
+            )
+        
+        plan_data = result.data[0]["plan_data"]
+        
+        # Generate grant methods
+        grant_generator = get_grant_methods_generator(openai_client)
+        methods_section = await grant_generator.generate_grant_methods(
+            plan=plan_data,
+            grant_body=grant_body
+        )
+        
+        if not methods_section:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "GRANT_GENERATION_FAILED",
+                    "message": "Failed to generate grant Methods section"
+                }
+            )
+        
+        return {
+            "grant_body": grant_body,
+            "methods_section": methods_section,
+            "generated_at": datetime.utcnow().isoformat()
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate grant methods for plan {plan_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "GRANT_GENERATION_ERROR",
+                "message": "Failed to generate grant Methods section",
+                "details": str(e)
+            }
+        )
+
+
+@router.post(
+    "/{plan_id}/notebook",
+    summary="Generate lab notebook template",
+    description="Generate a pre-filled electronic lab notebook template from an experiment plan.",
+    responses={
+        404: {"description": "Plan not found"},
+    },
+    tags=["Plans"]
+)
+async def generate_notebook(
+    plan_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    openai_client: OpenAIClient = Depends(get_openai_client),
+    db: AsyncClient = Depends(get_db_session)
+) -> Dict[str, Any]:
+    """
+    Generate lab notebook template
+    
+    Args:
+        plan_id: Plan ID
+        current_user: Authenticated user
+        openai_client: OpenAI client
+        db: Database session
+    
+    Returns:
+        Dict: Notebook template JSON
+    """
+    try:
+        # Fetch plan from database
+        result = db.table("experiment_plans").select(
+            "plan_data"
+        ).eq("id", plan_id).eq("user_id", current_user.id).execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "PLAN_NOT_FOUND",
+                    "message": "Experiment plan not found"
+                }
+            )
+        
+        plan_data = result.data[0]["plan_data"]
+        plan_data["id"] = plan_id  # Add plan ID for notebook header
+        
+        # Generate notebook
+        notebook_generator = get_notebook_generator(openai_client)
+        notebook = await notebook_generator.generate_notebook(plan=plan_data)
+        
+        if not notebook:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "NOTEBOOK_GENERATION_FAILED",
+                    "message": "Failed to generate lab notebook template"
+                }
+            )
+        
+        return {
+            "notebook": notebook.model_dump()
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate notebook for plan {plan_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "NOTEBOOK_GENERATION_ERROR",
+                "message": "Failed to generate lab notebook template",
+                "details": str(e)
+            }
+        )
+
+
+@router.get(
+    "/{plan_id}/versions",
+    summary="Get plan version history",
+    description="Retrieve all versions of an experiment plan.",
+    responses={
+        404: {"description": "Plan not found"},
+    },
+    tags=["Plans"]
+)
+async def get_plan_versions(
+    plan_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncClient = Depends(get_db_session)
+) -> Dict[str, Any]:
+    """
+    Get plan version history
+    
+    Args:
+        plan_id: Plan ID
+        current_user: Authenticated user
+        db: Database session
+    
+    Returns:
+        Dict: List of plan versions
+    """
+    try:
+        # Verify plan exists and user has access
+        plan_result = db.table("experiment_plans").select(
+            "id"
+        ).eq("id", plan_id).eq("user_id", current_user.id).execute()
+        
+        if not plan_result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "PLAN_NOT_FOUND",
+                    "message": "Experiment plan not found"
+                }
+            )
+        
+        # Fetch versions
+        versions_result = db.table("plan_versions").select(
+            "version_number, created_at, triggered_by, change_summary"
+        ).eq("experiment_id", plan_id).order("version_number", desc=True).execute()
+        
+        return {
+            "versions": versions_result.data or []
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch versions for plan {plan_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "VERSIONS_FETCH_ERROR",
+                "message": "Failed to fetch plan versions",
+                "details": str(e)
+            }
+        )
+
+
+@router.post(
+    "/{plan_id}/restore/{version_number}",
+    summary="Restore plan version",
+    description="Restore a previous version of an experiment plan.",
+    responses={
+        404: {"description": "Plan or version not found"},
+    },
+    tags=["Plans"]
+)
+async def restore_plan_version(
+    plan_id: str,
+    version_number: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncClient = Depends(get_db_session)
+) -> Dict[str, Any]:
+    """
+    Restore plan version
+    
+    Args:
+        plan_id: Plan ID
+        version_number: Version number to restore
+        current_user: Authenticated user
+        db: Database session
+    
+    Returns:
+        Dict: Restoration confirmation
+    """
+    try:
+        # Verify plan exists and user has access
+        plan_result = db.table("experiment_plans").select(
+            "id"
+        ).eq("id", plan_id).eq("user_id", current_user.id).execute()
+        
+        if not plan_result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "PLAN_NOT_FOUND",
+                    "message": "Experiment plan not found"
+                }
+            )
+        
+        # Fetch version snapshot
+        version_result = db.table("plan_versions").select(
+            "plan_snapshot"
+        ).eq("experiment_id", plan_id).eq("version_number", version_number).execute()
+        
+        if not version_result.data:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "VERSION_NOT_FOUND",
+                    "message": f"Version {version_number} not found"
+                }
+            )
+        
+        plan_snapshot = version_result.data[0]["plan_snapshot"]
+        
+        # Update current plan with snapshot
+        db.table("experiment_plans").update({
+            "plan_data": plan_snapshot,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", plan_id).execute()
+        
+        # Create new version entry for the restoration
+        # Get current max version number
+        max_version_result = db.table("plan_versions").select(
+            "version_number"
+        ).eq("experiment_id", plan_id).order("version_number", desc=True).limit(1).execute()
+        
+        new_version_number = 1
+        if max_version_result.data:
+            new_version_number = max_version_result.data[0]["version_number"] + 1
+        
+        db.table("plan_versions").insert({
+            "experiment_id": plan_id,
+            "version_number": new_version_number,
+            "plan_snapshot": plan_snapshot,
+            "change_summary": f"Restored from version {version_number}",
+            "triggered_by": "manual_regen"
+        }).execute()
+        
+        return {
+            "plan_id": plan_id,
+            "version_number": new_version_number,
+            "restored_from": version_number,
+            "restored_at": datetime.utcnow().isoformat()
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to restore version {version_number} for plan {plan_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "VERSION_RESTORE_ERROR",
+                "message": "Failed to restore plan version",
+                "details": str(e)
+            }
+        )
+
+
+@router.put(
+    "/equipment/{equipment_name}",
+    summary="Update equipment availability",
+    description="Update equipment availability status for the current user's lab.",
+    tags=["Plans"]
+)
+async def update_equipment(
+    equipment_name: str,
+    has_item: bool = Query(..., description="Whether the lab has this equipment"),
+    notes: Optional[str] = Query(None, description="Additional notes"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncClient = Depends(get_db_session)
+) -> Dict[str, Any]:
+    """
+    Update equipment availability
+    
+    Args:
+        equipment_name: Equipment name
+        has_item: Whether the lab has this equipment
+        notes: Additional notes
+        current_user: Authenticated user
+        db: Database session
+    
+    Returns:
+        Dict: Update confirmation
+    """
+    try:
+        # Check if equipment record exists
+        existing = db.table("lab_equipment").select(
+            "id"
+        ).eq("user_id", current_user.id).eq("equipment", equipment_name).execute()
+        
+        if existing.data:
+            # Update existing record
+            db.table("lab_equipment").update({
+                "has_item": has_item,
+                "notes": notes,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", existing.data[0]["id"]).execute()
+        else:
+            # Insert new record
+            db.table("lab_equipment").insert({
+                "user_id": current_user.id,
+                "equipment": equipment_name,
+                "has_item": has_item,
+                "notes": notes
+            }).execute()
+        
+        return {
+            "equipment": equipment_name,
+            "has_item": has_item,
+            "notes": notes,
+            "saved_at": datetime.utcnow().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to update equipment {equipment_name}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "EQUIPMENT_UPDATE_ERROR",
+                "message": "Failed to update equipment availability",
+                "details": str(e)
+            }
+        )

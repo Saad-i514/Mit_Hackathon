@@ -3,11 +3,13 @@ Plan Generator Component
 Generates complete experiment plans using GPT-4o with few-shot learning
 """
 import json
+import asyncio
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from app.services.openai_client import OpenAIClient
 from app.services.learning_engine import LearningEngine, FeedbackEmbedding
+from app.services.pubchem import get_pubchem_client, PubChemClient
 from app.models.responses import (
     ExperimentPlan, Protocol, Materials, Timeline, ValidationCriteria,
     ExperimentPlanMetadata, NoveltyAssessment, NoveltyClassification
@@ -34,6 +36,7 @@ class PlanGenerator:
         """
         self.openai_client = openai_client
         self.learning_engine = learning_engine
+        self.pubchem_client: PubChemClient = get_pubchem_client()
         self.system_prompt = self._load_system_prompt()
     
     def _load_system_prompt(self) -> str:
@@ -102,6 +105,7 @@ class PlanGenerator:
             
             # Parse JSON response
             plan_data = json.loads(response)
+            await self._enrich_materials_with_pubchem(plan_data)
             
             # Validate and construct ExperimentPlan
             plan = self._construct_experiment_plan(
@@ -124,6 +128,34 @@ class PlanGenerator:
         except Exception as e:
             logger.error(f"Plan generation failed: {e}")
             raise Exception(f"Plan generation failed: {str(e)}")
+
+    async def _enrich_materials_with_pubchem(self, plan_data: Dict[str, Any]) -> None:
+        """Enrich generated materials with PubChem metadata."""
+        items = (plan_data.get("materials") or {}).get("items") or []
+        if not items:
+            return
+
+        async def _enrich(item: Dict[str, Any]) -> Dict[str, Any]:
+            data = await self.pubchem_client.enrich_reagent(item.get("name", ""))
+            if not data.get("pubchem_found"):
+                return item
+            item["pubchem_found"] = True
+            item["cid"] = data.get("cid")
+            item["cas_number"] = data.get("cas_number")
+            item["molecular_weight"] = data.get("molecular_weight")
+            item["molecular_formula"] = data.get("molecular_formula")
+            item["ghs_codes"] = data.get("ghs_codes", [])
+            item["pubchem_url"] = data.get("pubchem_url")
+            return item
+
+        enriched = await asyncio.gather(*[_enrich(item) for item in items], return_exceptions=True)
+        out = []
+        for idx, result in enumerate(enriched):
+            if isinstance(result, Exception):
+                out.append(items[idx])
+            else:
+                out.append(result)
+        plan_data.setdefault("materials", {})["items"] = out
     
     def _build_user_prompt(
         self,
@@ -209,7 +241,7 @@ CRITICAL: Return ONLY valid JSON matching the schema in the system prompt. No ad
         
         # Construct metadata
         metadata = ExperimentPlanMetadata(
-            generated_at=datetime.utcnow().isoformat(),
+            generated_at=datetime.now(timezone.utc).isoformat(),
             model_version="gpt-4o",
             few_shot_examples_used=few_shot_examples_used,
             requires_expert_review=requires_expert_review,
@@ -230,9 +262,76 @@ CRITICAL: Return ONLY valid JSON matching the schema in the system prompt. No ad
             materials=materials,
             timeline=timeline,
             validation_criteria=validation_criteria,
+            power_analysis=plan_data.get("power_analysis"),
+            safety_assessment=plan_data.get("safety_assessment"),
+            variants=self._normalize_variants(plan_data.get("variants")),
+            equipment_required=plan_data.get("equipment_required", []),
             metadata=metadata
         )
     
+    def _normalize_variants(self, variants: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Normalize AI-generated variants to the expected frontend schema.
+        GPT-4o may use different field names (total_cost_usd, timeline_weeks, etc.)
+        so we map them to the canonical names (total_budget, timeline_days).
+        """
+        if not variants or not isinstance(variants, dict):
+            return None
+
+        def normalize_one(v: Any) -> Dict[str, Any]:
+            if not isinstance(v, dict):
+                return {}
+            # Resolve total_budget from multiple possible field names
+            total_budget = (
+                v.get("total_budget")
+                or v.get("total_cost_usd")
+                or v.get("total_cost")
+                or v.get("cost_usd")
+                or 0
+            )
+            # Resolve timeline_days from multiple possible field names
+            timeline_days = v.get("timeline_days")
+            if timeline_days is None:
+                weeks = v.get("timeline_weeks") or v.get("duration_weeks")
+                timeline_days = int(weeks) * 7 if weeks is not None else None
+
+            # Resolve materials — may be a list or a dict with items key
+            raw_materials = v.get("materials", [])
+            if isinstance(raw_materials, list):
+                materials = {"items": raw_materials, "total_budget": total_budget, "currency": "USD"}
+            elif isinstance(raw_materials, dict):
+                materials = raw_materials
+                if "total_budget" not in materials:
+                    materials["total_budget"] = total_budget
+            else:
+                materials = {"items": [], "total_budget": total_budget, "currency": "USD"}
+
+            # Resolve protocol_modifications
+            protocol_modifications = (
+                v.get("protocol_modifications")
+                or v.get("key_tradeoffs")
+                or v.get("key_advantages")
+                or v.get("modifications")
+                or []
+            )
+            if isinstance(protocol_modifications, str):
+                protocol_modifications = [protocol_modifications]
+
+            return {
+                "total_budget": total_budget,
+                "timeline_days": timeline_days,
+                "description": v.get("description", ""),
+                "materials": materials,
+                "protocol_modifications": protocol_modifications,
+            }
+
+        result = {}
+        for key in ("budget", "standard", "premium"):
+            if key in variants:
+                result[key] = normalize_one(variants[key])
+
+        return result if result else None
+
     def _identify_review_flags(self, plan_data: Dict[str, Any]) -> List[str]:
         """
         Identify sections requiring expert review
