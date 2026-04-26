@@ -49,7 +49,8 @@ class PlanGenerator:
         self,
         hypothesis: str,
         domain: str,
-        novelty_assessment: NoveltyAssessment
+        novelty_assessment: NoveltyAssessment,
+        protocol_matches: Optional[List[Dict[str, Any]]] = None
     ) -> ExperimentPlan:
         """
         Generate complete experiment plan with few-shot learning
@@ -84,7 +85,8 @@ class PlanGenerator:
                 hypothesis=hypothesis,
                 domain=domain,
                 novelty_assessment=novelty_assessment,
-                few_shot_context=few_shot_context
+                few_shot_context=few_shot_context,
+                protocol_matches=protocol_matches or [],
             )
             
             # Generate plan using GPT-4o
@@ -107,7 +109,8 @@ class PlanGenerator:
                 hypothesis=hypothesis,
                 domain=domain,
                 novelty_classification=novelty_assessment.classification,
-                few_shot_examples_used=len(similar_corrections)
+                few_shot_examples_used=len(similar_corrections),
+                protocol_matches=protocol_matches or [],
             )
             
             logger.info(f"Generated experiment plan for domain {domain} with {len(similar_corrections)} few-shot examples")
@@ -127,7 +130,8 @@ class PlanGenerator:
         hypothesis: str,
         domain: str,
         novelty_assessment: NoveltyAssessment,
-        few_shot_context: str
+        few_shot_context: str,
+        protocol_matches: List[Dict[str, Any]]
     ) -> str:
         """Build user prompt for plan generation"""
         
@@ -141,12 +145,30 @@ class PlanGenerator:
                 if paper.abstract:
                     literature_context += f"\n  Abstract: {paper.abstract[:150]}..."
         
+        protocols_context = ""
+        if protocol_matches:
+            top_matches = protocol_matches[:2]
+            lines = []
+            for idx, match in enumerate(top_matches, start=1):
+                lines.append(
+                    f"Protocol {idx}: {match.get('title', 'N/A')} "
+                    f"({match.get('citations', 0)} citations, {match.get('steps', 'N/A')} steps)\n"
+                    f"DOI: {match.get('doi') or 'N/A'}\n"
+                    f"URL: {match.get('url') or 'N/A'}"
+                )
+            protocols_context = (
+                "\n\nSIMILAR_PROTOCOLS_CONTEXT:\n"
+                "Use the following protocols.io matches as methodological anchors where applicable:\n"
+                + "\n".join(lines)
+            )
+
         prompt = f"""Generate a complete, operationally realistic experiment plan for this hypothesis:
 
 Hypothesis: "{hypothesis}"
 Domain: {domain}
 {literature_context}
 {few_shot_context}
+{protocols_context}
 
 REQUIREMENTS:
 1. Ground ALL protocol steps in real published protocols (protocols.io, bio-protocol.org, peer-reviewed papers)
@@ -166,7 +188,8 @@ CRITICAL: Return ONLY valid JSON matching the schema in the system prompt. No ad
         hypothesis: str,
         domain: str,
         novelty_classification: NoveltyClassification,
-        few_shot_examples_used: int
+        few_shot_examples_used: int,
+        protocol_matches: List[Dict[str, Any]]
     ) -> ExperimentPlan:
         """
         Construct ExperimentPlan from parsed JSON
@@ -189,7 +212,8 @@ CRITICAL: Return ONLY valid JSON matching the schema in the system prompt. No ad
             generated_at=datetime.utcnow().isoformat(),
             model_version="gpt-4o",
             few_shot_examples_used=few_shot_examples_used,
-            requires_expert_review=requires_expert_review
+            requires_expert_review=requires_expert_review,
+            protocols_io_matches=protocol_matches,
         )
         
         # Parse and validate each section

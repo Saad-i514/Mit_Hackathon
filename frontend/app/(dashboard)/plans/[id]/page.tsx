@@ -87,9 +87,9 @@ export default function PlanDetailPage() {
 
   if (error || !plan) return (
     <div className="min-h-screen gradient-bg flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl border border-red-200 p-8 max-w-md w-full text-center">
+      <div className="bg-background/60 backdrop-blur-md rounded-2xl border border-red-200 p-8 max-w-md w-full text-center">
         <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">Plan Not Found</h2>
+        <h2 className="text-xl font-semibold text-foreground mb-2">Plan Not Found</h2>
         <p className="text-muted-foreground mb-6">{error || 'This plan does not exist or you do not have access.'}</p>
         <Button onClick={() => router.push('/plans')} variant="outline">
           <ArrowLeft className="h-4 w-4 mr-2" /> Back to Plans
@@ -105,7 +105,7 @@ export default function PlanDetailPage() {
       <div className="container mx-auto px-4 py-8 max-w-5xl">
 
         {/* Back button */}
-        <Button variant="ghost" size="sm" onClick={() => router.push('/plans')} className="mb-6 text-muted-foreground hover:text-gray-900">
+        <Button variant="ghost" size="sm" onClick={() => router.push('/plans')} className="mb-6 text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4 mr-2" /> Back to Plans
         </Button>
 
@@ -113,7 +113,7 @@ export default function PlanDetailPage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6"
+          className="bg-background/60 backdrop-blur-md rounded-2xl border border-white/10 shadow-sm p-6 mb-6"
         >
           <div className="flex items-start justify-between gap-4 mb-4">
             <div className="flex items-center gap-3">
@@ -121,7 +121,7 @@ export default function PlanDetailPage() {
                 <Microscope className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">{plan.domain}</h1>
+                <h1 className="text-xl font-bold text-foreground">{plan.domain}</h1>
                 <p className="text-sm text-muted-foreground">Experiment Plan</p>
               </div>
             </div>
@@ -136,8 +136,8 @@ export default function PlanDetailPage() {
             </div>
           </div>
 
-          <div className="bg-gray-50 rounded-xl p-4 mb-4">
-            <p className="text-sm text-gray-700 leading-relaxed italic">"{plan.hypothesis}"</p>
+          <div className="bg-card/50 rounded-xl p-4 mb-4">
+            <p className="text-sm text-foreground/80 leading-relaxed italic">"{plan.hypothesis}"</p>
           </div>
 
           {/* Expert review flags */}
@@ -159,9 +159,9 @@ export default function PlanDetailPage() {
               { icon: Clock,        label: 'Duration',       value: `${plan.timeline.total_duration_days}d` },
               { icon: CheckCircle2, label: 'Success Criteria', value: plan.validation_criteria.success_criteria.length },
             ].map(s => (
-              <div key={s.label} className="bg-gray-50 rounded-xl p-3 text-center">
+              <div key={s.label} className="bg-card/50 rounded-xl p-3 text-center">
                 <s.icon className="h-4 w-4 text-blue-600 mx-auto mb-1" />
-                <div className="text-lg font-bold text-gray-900">{s.value}</div>
+                <div className="text-lg font-bold text-foreground">{s.value}</div>
                 <div className="text-xs text-muted-foreground">{s.label}</div>
               </div>
             ))}
@@ -169,7 +169,7 @@ export default function PlanDetailPage() {
         </motion.div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-white rounded-xl border border-gray-100 p-1 mb-4 shadow-sm overflow-x-auto">
+        <div className="flex gap-1 bg-background/60 backdrop-blur-md rounded-xl border border-white/10 p-1 mb-4 shadow-sm overflow-x-auto">
           {TABS.map(tab => (
             <button
               key={tab.id}
@@ -177,7 +177,7 @@ export default function PlanDetailPage() {
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 ${
                 activeTab === tab.id
                   ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
               }`}
             >
               <tab.icon className="h-4 w-4" />
@@ -214,32 +214,32 @@ export default function PlanDetailPage() {
               )}
 
               {plan.protocol.steps.map((step, i) => (
-                <div key={i} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <div key={i} className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm overflow-hidden">
                   <div
-                    className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                    className="flex items-center gap-3 p-4 cursor-pointer hover:bg-card/50 transition-colors"
                     onClick={() => setExpandedStep(expandedStep === i ? null : i)}
                   >
                     <div className="h-8 w-8 rounded-lg bg-blue-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">
                       {step.step_number}
                     </div>
-                    <p className="flex-1 text-sm font-medium text-gray-900 line-clamp-2">{step.description}</p>
+                    <p className="flex-1 text-sm font-medium text-foreground line-clamp-2">{step.description}</p>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <Badge variant="outline" className="text-xs">{step.duration}</Badge>
                       <button
                         onClick={e => { e.stopPropagation(); copyStep(step.description, i); }}
-                        className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                        className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground/80 hover:text-muted-foreground transition-colors"
                       >
                         {copiedStep === i ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                       </button>
-                      {expandedStep === i ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                      {expandedStep === i ? <ChevronUp className="h-4 w-4 text-muted-foreground/80" /> : <ChevronDown className="h-4 w-4 text-muted-foreground/80" />}
                     </div>
                   </div>
 
                   {expandedStep === i && (
-                    <div className="border-t border-gray-100 p-4 bg-gray-50 space-y-3">
+                    <div className="border-t border-white/10 p-4 bg-card/50 space-y-3">
                       {Object.keys(step.critical_parameters).length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Critical Parameters</p>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Critical Parameters</p>
                           <div className="flex flex-wrap gap-2">
                             {Object.entries(step.critical_parameters).map(([k, v]) => (
                               <span key={k} className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium border border-blue-100">
@@ -251,7 +251,7 @@ export default function PlanDetailPage() {
                       )}
                       {step.source && (
                         <div>
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Source</p>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Source</p>
                           <div className="flex items-center gap-2 text-xs text-blue-600">
                             <BookOpen className="h-3.5 w-3.5" />
                             <span>{step.source.title}</span>
@@ -269,8 +269,8 @@ export default function PlanDetailPage() {
               ))}
 
               {plan.protocol.troubleshooting.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <div className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm p-4">
+                  <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                     <AlertCircle className="h-4 w-4 text-orange-500" /> Troubleshooting
                   </h3>
                   <div className="space-y-3">
@@ -295,26 +295,26 @@ export default function PlanDetailPage() {
           {/* ── Materials Tab ── */}
           {activeTab === 'materials' && (
             <div className="space-y-4">
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-gray-50 border-b border-gray-100">
-                        <th className="text-left p-3 font-semibold text-gray-700">Material</th>
-                        <th className="text-left p-3 font-semibold text-gray-700">Catalog #</th>
-                        <th className="text-left p-3 font-semibold text-gray-700">Supplier</th>
-                        <th className="text-right p-3 font-semibold text-gray-700">Qty</th>
-                        <th className="text-right p-3 font-semibold text-gray-700">Unit Price</th>
-                        <th className="text-right p-3 font-semibold text-gray-700">Total</th>
-                        <th className="text-center p-3 font-semibold text-gray-700">Status</th>
+                      <tr className="bg-card/50 border-b border-white/10">
+                        <th className="text-left p-3 font-semibold text-foreground/80">Material</th>
+                        <th className="text-left p-3 font-semibold text-foreground/80">Catalog #</th>
+                        <th className="text-left p-3 font-semibold text-foreground/80">Supplier</th>
+                        <th className="text-right p-3 font-semibold text-foreground/80">Qty</th>
+                        <th className="text-right p-3 font-semibold text-foreground/80">Unit Price</th>
+                        <th className="text-right p-3 font-semibold text-foreground/80">Total</th>
+                        <th className="text-center p-3 font-semibold text-foreground/80">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {plan.materials.items.map((item, i) => (
-                        <tr key={i} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                          <td className="p-3 font-medium text-gray-900">{item.name}</td>
-                          <td className="p-3 font-mono text-xs text-gray-600">{item.catalog_number}</td>
-                          <td className="p-3 text-gray-600">
+                        <tr key={i} className="border-b border-white/5 hover:bg-card/50 transition-colors">
+                          <td className="p-3 font-medium text-foreground">{item.name}</td>
+                          <td className="p-3 font-mono text-xs text-muted-foreground">{item.catalog_number}</td>
+                          <td className="p-3 text-muted-foreground">
                             {item.product_url ? (
                               <a href={item.product_url} target="_blank" rel="noopener noreferrer"
                                 className="text-blue-600 hover:underline flex items-center gap-1">
@@ -322,9 +322,9 @@ export default function PlanDetailPage() {
                               </a>
                             ) : item.supplier}
                           </td>
-                          <td className="p-3 text-right text-gray-700">{item.quantity} {item.unit}</td>
-                          <td className="p-3 text-right text-gray-700">${item.unit_price.toFixed(2)}</td>
-                          <td className="p-3 text-right font-medium text-gray-900">${item.total_price.toFixed(2)}</td>
+                          <td className="p-3 text-right text-foreground/80">{item.quantity} {item.unit}</td>
+                          <td className="p-3 text-right text-foreground/80">${item.unit_price.toFixed(2)}</td>
+                          <td className="p-3 text-right font-medium text-foreground">${item.total_price.toFixed(2)}</td>
                           <td className="p-3 text-center">
                             <Badge className={`text-xs border ${
                               item.verification_status === 'verified'
@@ -339,7 +339,7 @@ export default function PlanDetailPage() {
                     </tbody>
                     <tfoot>
                       <tr className="bg-blue-50 border-t-2 border-blue-200">
-                        <td colSpan={5} className="p-3 font-bold text-gray-900 text-right">Total Budget</td>
+                        <td colSpan={5} className="p-3 font-bold text-foreground text-right">Total Budget</td>
                         <td className="p-3 text-right font-bold text-blue-700 text-lg">
                           ${plan.materials.total_budget.toLocaleString()} {plan.materials.currency}
                         </td>
@@ -355,9 +355,9 @@ export default function PlanDetailPage() {
           {/* ── Timeline Tab ── */}
           {activeTab === 'timeline' && (
             <div className="space-y-3">
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+              <div className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm p-4 mb-4">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-gray-900">Total Duration</span>
+                  <span className="font-semibold text-foreground">Total Duration</span>
                   <Badge className="bg-blue-100 text-blue-700 border-blue-200 border text-sm px-3 py-1">
                     {plan.timeline.total_duration_days} days
                   </Badge>
@@ -375,9 +375,9 @@ export default function PlanDetailPage() {
                         <div className="w-0.5 flex-1 bg-gradient-to-b from-blue-400 to-blue-200 mt-1 min-h-[24px]" />
                       )}
                     </div>
-                    <div className="flex-1 bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-1">
+                    <div className="flex-1 bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm p-4 mb-1">
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-semibold text-gray-900">{phase.name}</h3>
+                        <h3 className="font-semibold text-foreground">{phase.name}</h3>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="text-xs">
                             <Clock className="h-3 w-3 mr-1" />{phase.duration_days}d
@@ -387,7 +387,7 @@ export default function PlanDetailPage() {
                           )}
                         </div>
                       </div>
-                      <p className="text-sm text-gray-600">{phase.description}</p>
+                      <p className="text-sm text-muted-foreground">{phase.description}</p>
                       {phase.dependencies.length > 0 && (
                         <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
                           <span>Depends on:</span>
@@ -406,20 +406,20 @@ export default function PlanDetailPage() {
           {/* ── Validation Tab ── */}
           {activeTab === 'validation' && (
             <div className="space-y-4">
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <div className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm p-5">
+                <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                   <CheckCircle2 className="h-5 w-5 text-green-600" /> Success Criteria
                 </h3>
                 <div className="space-y-3">
                   {plan.validation_criteria.success_criteria.map((c, i) => (
                     <div key={i} className="bg-green-50 border border-green-100 rounded-xl p-4">
                       <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm text-gray-800 font-medium">{c.description}</p>
+                        <p className="text-sm text-foreground/90 font-medium">{c.description}</p>
                         <Badge className="bg-green-100 text-green-700 border-green-200 border text-xs flex-shrink-0">
                           {c.threshold}
                         </Badge>
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
                         <span>Method: {c.measurement_technique}</span>
                         {c.expected_range && <span>Expected: {c.expected_range}</span>}
                       </div>
@@ -428,28 +428,28 @@ export default function PlanDetailPage() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <div className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm p-5">
+                <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                   <AlertCircle className="h-5 w-5 text-red-500" /> Failure Criteria
                 </h3>
                 <div className="space-y-3">
                   {plan.validation_criteria.failure_criteria.map((c, i) => (
                     <div key={i} className="bg-red-50 border border-red-100 rounded-xl p-4">
                       <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm text-gray-800 font-medium">{c.description}</p>
+                        <p className="text-sm text-foreground/90 font-medium">{c.description}</p>
                         <Badge className="bg-red-100 text-red-700 border-red-200 border text-xs flex-shrink-0">
                           {c.threshold}
                         </Badge>
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">Method: {c.measurement_technique}</p>
+                      <p className="text-xs text-muted-foreground mt-1">Method: {c.measurement_technique}</p>
                     </div>
                   ))}
                 </div>
               </div>
 
               {plan.validation_criteria.validation_methods.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                  <h3 className="font-semibold text-gray-900 mb-3">Statistical Methods</h3>
+                <div className="bg-background/60 backdrop-blur-md rounded-xl border border-white/10 shadow-sm p-5">
+                  <h3 className="font-semibold text-foreground mb-3">Statistical Methods</h3>
                   <div className="flex flex-wrap gap-2">
                     {plan.validation_criteria.validation_methods.map((m, i) => (
                       <Badge key={i} variant="outline" className="text-sm">{m}</Badge>

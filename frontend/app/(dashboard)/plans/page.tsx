@@ -78,7 +78,7 @@ export default function PlansPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">My Plans</h1>
+            <h1 className="text-3xl font-bold text-foreground">My Plans</h1>
             <p className="text-muted-foreground mt-1">
               {total > 0 ? `${total} experiment plan${total !== 1 ? 's' : ''}` : 'No plans yet'}
             </p>
@@ -119,7 +119,7 @@ export default function PlansPage() {
             <div className="h-20 w-20 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-4">
               <FlaskConical className="h-10 w-10 text-blue-400" />
             </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">No plans yet</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-2">No plans yet</h2>
             <p className="text-muted-foreground mb-6">Generate your first experiment plan to get started.</p>
             <Button onClick={() => router.push('/new-plan')} className="bg-blue-600 hover:bg-blue-700">
               <Sparkles className="h-4 w-4 mr-2" /> Generate First Plan
@@ -138,14 +138,14 @@ export default function PlansPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                   onClick={() => router.push(`/plans/${plan.id}`)}
-                  className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4 cursor-pointer hover:border-blue-200 hover:shadow-md transition-all card-hover"
+                  className="bg-card text-card-foreground rounded-xl border border-border p-5 flex items-center gap-4 cursor-pointer hover:border-blue-200 hover:shadow-md transition-all card-hover"
                 >
                   <div className="h-11 w-11 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
                     <FileText className="h-5 w-5 text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-gray-900 truncate">
+                      <span className="font-medium text-foreground truncate">
                         {plan.domain || 'Experiment Plan'}
                       </span>
                       <Badge className={`text-xs border ${statusColor(plan.status)}`}>
@@ -165,7 +165,7 @@ export default function PlansPage() {
                       )}
                     </div>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                  <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                 </motion.div>
               ))}
             </div>

@@ -30,8 +30,9 @@ class SSEEvent(BaseModel):
     data: Dict[str, Any]
     
     def to_sse_format(self) -> str:
-        """Convert to SSE format string"""
-        return f"event: {self.event_type}\ndata: {json.dumps(self.dict())}\n\n"
+        """Convert to raw SSE string format."""
+        payload = json.dumps(self.model_dump())
+        return f"event: {self.event_type.value}\ndata: {payload}\n\n"
 
 
 class SSEManager:
@@ -224,7 +225,7 @@ class SSEManager:
                         timeout=1.0
                     )
                     
-                    # Yield SSE-formatted event
+                    # Yield raw SSE event string
                     yield event.to_sse_format()
                     
                     # Mark task as done

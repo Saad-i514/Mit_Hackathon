@@ -54,7 +54,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-[#020617] text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
@@ -86,7 +86,7 @@ html {
 
 /* Animated gradient background */
 .gradient-bg {
-  background: linear-gradient(-45deg, #eff6ff, #f0f9ff, #faf5ff, #f0fdf4);
+  background: linear-gradient(-45deg, #020617, #0f172a, #1e1b4b, #020617);
   background-size: 400% 400%;
   animation: gradientShift 15s ease infinite;
 }

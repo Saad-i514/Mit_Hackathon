@@ -1,0 +1,612 @@
+THE AI SCIENTIST
+Full-Stack Developer Report
+
+Fulcrum Science × Hack-Nation · Global AI Hackathon 2026
+
+Prepared by: Senior Software Engineer
+Version 1.0  |  April 2026
+
+1. Executive Summary
+This document serves as the complete technical specification and developer reference for The AI Scientist — an AI-powered, end-to-end experiment planning platform developed for the Fulcrum Science × Hack-Nation Global AI Hackathon 2026. The system accepts a natural-language scientific hypothesis and autonomously generates a fully operational experiment plan including protocol steps, materials with catalog numbers, realistic budget estimates, phased timelines, and success/failure validation criteria.
+The platform is built to production-grade standards — not a demo or prototype. Every component uses battle-tested technologies with real API integrations, persistent storage, and a polished user interface that a practicing Principal Investigator would confidently use.
+The implementation additionally fulfils the Stretch Goal: a Scientist Review & Learning Loop that captures structured expert corrections and uses them as few-shot context for subsequent plan generations of similar experiment types — creating a system that improves with use.
+Dimension
+Decision
+Primary Language
+Python 3.12 (backend) · TypeScript (frontend)
+AI Orchestration
+LangGraph (stateful directed graph pipeline)
+LLM Provider
+OpenAI GPT-4o (paid key — highest quality scientific reasoning)
+Literature Search
+Semantic Scholar API + Serper Web Search
+Database
+Supabase (PostgreSQL + pgvector)
+Backend Framework
+FastAPI with async/await
+Frontend Framework
+Next.js 14 (App Router) + TailwindCSS + shadcn/ui
+Deployment
+Vercel (frontend) + Render.com (backend)
+Observability
+LangSmith (free tier — full LangGraph trace visibility)
+
+
+2. Project Overview
+2.1  Problem Statement
+Converting a scientific question into a runnable experiment plan currently requires weeks of manual expert labour: scoping the methodology, estimating costs, sourcing reagents, and staffing the team. A senior scientist who has run a similar protocol before may do this in hours; one who has not may take days — and the quality gap is real. A miscalculated reagent concentration or an unrealistic timeline can derail a lab for weeks.
+2.2  Solution Architecture (Three Stages)
+Stage
+Name
+Description
+Output
+1
+Input
+Accepts a natural-language scientific hypothesis from the user.
+Validated hypothesis string
+2
+Literature QC
+Checks whether this experiment (or a close analogue) has been published before.
+Novelty signal + 1-3 references
+3
+Experiment Plan
+Generates a complete, operationally realistic experiment plan grounded in real protocols.
+Full structured plan document
+★ Stretch
+Scientist Review
+Scientists annotate generated plans; corrections feed back into future generations.
+Improved plan quality over time
+
+2.3  Quality Bar
+Standard:  Would a real scientist trust this plan enough to order the materials and start running it on Monday? That is the only acceptable quality threshold.
+
+2.4  Sample Inputs Supported
+• Diagnostics — paper-based electrochemical biosensor for C-reactive protein detection in whole blood
+• Gut Health — Lactobacillus rhamnosus GG supplementation effect on intestinal permeability in C57BL/6 mice
+• Cell Biology — trehalose vs DMSO cryoprotectant comparison for HeLa cell post-thaw viability
+• Climate — Sporomusa ovata CO2 fixation to acetate in bioelectrochemical systems
+
+
+3. Tech Stack — Selection & Justification
+3.1  Why LangGraph (not CrewAI)
+CrewAI is designed for autonomous multi-agent systems where agents decide their own sub-tasks. The AI Scientist pipeline is structured and sequential — a directed graph of well-defined nodes. LangGraph is purpose-built for exactly this pattern: it models the pipeline as a stateful directed graph with explicit transitions, making every step deterministic, traceable, and debuggable in LangSmith.
+Criterion
+LangGraph ✅
+CrewAI ❌
+Flow model
+Explicit directed graph — you own every transition
+Agent-decided — less predictable in prod
+Debugging
+LangSmith traces every node with full I/O
+Black-box agent reasoning
+Streaming
+Native SSE streaming per node
+Limited streaming support
+State management
+Typed TypedDict state — passes seamlessly between nodes
+Shared memory can drift
+Production stability
+Used by Fortune 500 companies in prod
+Still maturing for enterprise
+Best suited for
+Structured sequential pipelines ✅ Our use case
+Open-ended autonomous tasks
+
+3.2  Full Stack Specification
+Layer
+Technology
+Version
+Free Tier / Cost
+LLM
+OpenAI GPT-4o
+Latest
+Paid key (provided)
+AI Orchestration
+LangGraph
+0.2.x
+Open source — free
+LLM Framework
+LangChain
+0.3.x
+Open source — free
+Observability
+LangSmith
+Latest
+Free (5K traces/month)
+Backend
+FastAPI
+0.115.x
+Open source — free
+Backend Runtime
+Python
+3.12
+Open source — free
+Database
+Supabase
+Latest
+Already provisioned ✅
+Vector Store
+Supabase pgvector
+Latest
+Included in Supabase ✅
+Lit. Search
+Semantic Scholar API
+v1
+Free (key provided) ✅
+Web Search
+Serper API
+v1
+2,500 free searches/month ✅
+Frontend
+Next.js 14 (App Router)
+14.x
+Open source — free
+UI Components
+shadcn/ui + Tailwind
+Latest
+Open source — free
+State Management
+Zustand
+5.x
+Open source — free
+Data Fetching
+TanStack Query
+5.x
+Open source — free
+Frontend Deploy
+Vercel
+Latest
+Free Hobby tier ✅
+Backend Deploy
+Render.com
+Latest
+Free 750 hrs/month ✅
+Streaming
+Server-Sent Events (SSE)
+Native
+No extra cost
+
+
+4. API Keys & Environment Configuration
+⚠  Security Notice:  The keys below are provided for development use. Before committing to any repository, move all keys to a .env file and add .env to .gitignore. Never hard-code keys in source code.
+
+4.1  Backend Environment File  (.env)
+Create the following file at the root of your FastAPI project:
+# ── OpenAI ──────────────────────────────────────────────────────────────────
+OPENAI_API_KEY=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
+OPENAI_MODEL=gpt-4o
+
+# ── Supabase ─────────────────────────────────────────────────────────────────
+SUPABASE_URL=https://kdzzyxihfxxcsnifcnpi.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtkenp5eGloZnh4Y3NuaWZjbnBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzY2MTYsImV4cCI6MjA5MjcxMjYxNn0.N-gS5ir59OcMqO1pYqobKuEgm8YgxYLd30AsMGbk86Y
+SUPABASE_DB_PASSWORD=UJbKTAN0FB4w0DiH
+SUPABASE_REST_URL=https://kdzzyxihfxxcsnifcnpi.supabase.co/rest/v1/
+
+# ── Literature & Search ──────────────────────────────────────────────────────
+SERPER_API_KEY=e42d5136b895c98dd4f23a91e899db9d6d4ff510
+SEMANTIC_SCHOLAR_API_KEY=s2k-7tsoZ3orl43EDfDE0uRVLhKbIjAYnCnq8g8WBVny
+
+# ── LangSmith (Observability) ────────────────────────────────────────────────
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=<your-langsmith-free-api-key>
+LANGCHAIN_PROJECT=ai-scientist
+
+# ── App Config ───────────────────────────────────────────────────────────────
+APP_ENV=development
+CORS_ORIGINS=http://localhost:3000,https://your-vercel-app.vercel.app
+4.2  Frontend Environment File  (.env.local)
+Create the following file at the root of your Next.js project:
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_SUPABASE_URL=https://kdzzyxihfxxcsnifcnpi.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtkenp5eGloZnh4Y3NuaWZjbnBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzY2MTYsImV4cCI6MjA5MjcxMjYxNn0.N-gS5ir59OcMqO1pYqobKuEgm8YgxYLd30AsMGbk86Y
+4.3  LangSmith Setup (Free — Required for Observability)
+Go to smith.langchain.com and sign up for a free account.
+Create a new project named  ai-scientist.
+Generate an API key and paste it into LANGCHAIN_API_KEY above.
+Every LangGraph node execution will appear as a full trace in your dashboard.
+
+
+5. System Architecture
+5.1  High-Level Architecture Diagram
+The system follows a modern full-stack architecture with a clear separation of concerns:
+┌─────────────────────────────────────────────────────────────────────┐│                         USER BROWSER                                ││   Next.js 14 (App Router)  ·  TailwindCSS  ·  shadcn/ui            ││   Zustand (state)  ·  TanStack Query  ·  SSE streaming client       │└────────────────────────────┬────────────────────────────────────────┘                             │  HTTPS / SSE (streaming)                             ▼┌─────────────────────────────────────────────────────────────────────┐│                      FASTAPI BACKEND                                ││                    (Python 3.12 · Render.com)                       ││  ┌──────────────────────────────────────────────────────────────┐   ││  │                   LANGGRAPH PIPELINE                         │   ││  │                                                              │   ││  │  [validate_input] ──► [literature_qc] ──► [plan_generator]  │   ││  │       │                     │                    │           │   ││  │   Pydantic              Semantic Scholar    OpenAI GPT-4o    │   ││  │   Validation            Serper Search       Protocol RAG     │   ││  │                                                              │   ││  │  [feedback_injector] ◄── [scientist_review] (Stretch Goal)   │   ││  └──────────────────────────────────────────────────────────────┘   │└─────────┬────────────────────────────────────────┬──────────────────┘          │                                        │          ▼                                        ▼┌────────────────────┐                  ┌────────────────────────────┐│  SUPABASE          │                  │  EXTERNAL APIs             ││  (PostgreSQL)      │                  │                            ││  · experiments     │                  │  · OpenAI GPT-4o           ││  · plans           │                  │  · Semantic Scholar        ││  · reviews         │                  │  · Serper Web Search       ││  · feedback_store  │                  │  · LangSmith (tracing)     ││  · pgvector index  │                  └────────────────────────────┘└────────────────────┘
+5.2  Data Flow
+Step
+Actor
+Action
+Technology
+1
+User
+Enters scientific hypothesis in the UI text area
+Next.js form
+2
+Frontend
+POST /api/v1/experiments with hypothesis payload
+TanStack Query
+3
+Backend
+Validates input, creates experiment record in DB
+FastAPI + Supabase
+4
+LangGraph
+Runs literature_qc node — searches Semantic Scholar & Serper
+S2 API + Serper
+5
+Backend → Frontend
+Streams QC result via SSE (novelty signal + refs)
+Server-Sent Events
+6
+LangGraph
+Runs plan_generator node — calls GPT-4o with RAG context
+OpenAI GPT-4o
+7
+Backend → Frontend
+Streams plan sections progressively as they're generated
+SSE streaming
+8
+Frontend
+Renders plan in sectioned UI (Protocol, Materials, Budget...)
+React components
+9 ★
+Scientist
+Reviews plan sections, adds corrections and ratings
+Review UI
+10 ★
+Backend
+Stores structured corrections in feedback_store table
+Supabase
+11 ★
+LangGraph
+Injects matching feedback as few-shot context for similar queries
+pgvector similarity
+
+
+6. Database Design (Supabase / PostgreSQL)
+6.1  Enable pgvector Extension
+Run once in the Supabase SQL Editor:
+CREATE EXTENSION IF NOT EXISTS vector;
+6.2  Table: experiments
+CREATE TABLE experiments (    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),    hypothesis    TEXT NOT NULL,    domain        TEXT,                     -- e.g. 'diagnostics', 'cell_biology'    status        TEXT DEFAULT 'pending',   -- pending | qc_done | plan_done | reviewed    created_at    TIMESTAMPTZ DEFAULT NOW(),    updated_at    TIMESTAMPTZ DEFAULT NOW());
+6.3  Table: literature_qc_results
+CREATE TABLE literature_qc_results (    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),    experiment_id   UUID REFERENCES experiments(id) ON DELETE CASCADE,    novelty_signal  TEXT NOT NULL,   -- 'not_found' | 'similar_exists' | 'exact_match'    references      JSONB,           -- [{title, authors, year, url, abstract}]    raw_query       TEXT,    created_at      TIMESTAMPTZ DEFAULT NOW());
+6.4  Table: experiment_plans
+CREATE TABLE experiment_plans (    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),    experiment_id    UUID REFERENCES experiments(id) ON DELETE CASCADE,    protocol         JSONB,    -- [{step_number, title, description, duration_hours}]    materials        JSONB,    -- [{name, catalog_no, supplier, unit, qty, unit_cost_usd}]    budget_total_usd NUMERIC,    budget_breakdown JSONB,    timeline         JSONB,    -- [{phase, week_start, week_end, tasks, dependencies}]    validation       JSONB,    -- {success_criteria, failure_criteria, controls, assays}    summary          TEXT,    model_used       TEXT,    tokens_used      INTEGER,    created_at       TIMESTAMPTZ DEFAULT NOW());
+6.5  Table: scientist_reviews  (Stretch Goal)
+CREATE TABLE scientist_reviews (    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),    plan_id         UUID REFERENCES experiment_plans(id) ON DELETE CASCADE,    experiment_id   UUID REFERENCES experiments(id) ON DELETE CASCADE,    section         TEXT NOT NULL,  -- 'protocol' | 'materials' | 'budget' | 'timeline' | 'validation'    rating          INTEGER CHECK (rating BETWEEN 1 AND 5),    correction      TEXT,           -- Free-text correction from scientist    is_critical     BOOLEAN DEFAULT FALSE,    reviewer_role   TEXT,           -- 'PI' | 'postdoc' | 'technician'    created_at      TIMESTAMPTZ DEFAULT NOW());
+6.6  Table: feedback_store  (Stretch Goal — Few-Shot Context)
+CREATE TABLE feedback_store (    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),    experiment_type  TEXT NOT NULL,  -- domain/experiment category    section          TEXT NOT NULL,    original_text    TEXT,    corrected_text   TEXT NOT NULL,    correction_note  TEXT,    embedding        vector(1536),   -- OpenAI text-embedding-3-small embedding    times_used       INTEGER DEFAULT 0,    created_at       TIMESTAMPTZ DEFAULT NOW());-- HNSW index for fast similarity searchCREATE INDEX feedback_embedding_idx    ON feedback_store USING hnsw (embedding vector_cosine_ops);
+6.7  Row Level Security (RLS)
+-- Enable RLS on all tablesALTER TABLE experiments       ENABLE ROW LEVEL SECURITY;ALTER TABLE experiment_plans  ENABLE ROW LEVEL SECURITY;ALTER TABLE literature_qc_results ENABLE ROW LEVEL SECURITY;ALTER TABLE scientist_reviews ENABLE ROW LEVEL SECURITY;ALTER TABLE feedback_store    ENABLE ROW LEVEL SECURITY;-- Allow anon reads for demo; tighten for productionCREATE POLICY "anon_read"  ON experiments      FOR SELECT USING (true);CREATE POLICY "anon_insert" ON experiments     FOR INSERT WITH CHECK (true);
+
+7. Backend Architecture (FastAPI + LangGraph)
+7.1  Project Structure
+ai-scientist-backend/├── app/│   ├── main.py                    # FastAPI app entry point│   ├── config.py                  # Settings via pydantic-settings│   ├── dependencies.py            # Shared deps (supabase client, etc.)│   ││   ├── api/│   │   ├── v1/│   │   │   ├── experiments.py     # POST /experiments, GET /experiments/{id}│   │   │   ├── stream.py          # GET /experiments/{id}/stream (SSE)│   │   │   ├── reviews.py         # POST /reviews (Stretch Goal)│   │   │   └── feedback.py        # GET/POST /feedback (Stretch Goal)│   ││   ├── graph/│   │   ├── state.py               # LangGraph TypedDict state definition│   │   ├── nodes/│   │   │   ├── validate_input.py  # Node 1: Input validation│   │   │   ├── literature_qc.py   # Node 2: S2 + Serper search│   │   │   ├── plan_generator.py  # Node 3: GPT-4o plan generation│   │   │   └── feedback_injector.py  # Node 4 ★: Fetch relevant feedback│   │   └── pipeline.py            # Compile LangGraph StateGraph│   ││   ├── services/│   │   ├── semantic_scholar.py    # Semantic Scholar API client│   │   ├── serper.py              # Serper search client│   │   ├── openai_client.py       # OpenAI wrapper│   │   ├── supabase_client.py     # Supabase read/write helpers│   │   └── embedding.py           # OpenAI embedding for feedback store ★│   ││   ├── models/│   │   ├── experiment.py          # Pydantic request/response models│   │   ├── plan.py                # Pydantic plan models│   │   └── review.py              # Pydantic review models ★│   ││   └── prompts/│       ├── literature_qc.txt      # System prompt for QC node│       ├── plan_generator.txt     # System prompt for plan generation│       └── feedback_few_shot.txt  # Template for injecting corrections ★│├── requirements.txt├── Dockerfile├── .env└── render.yaml                    # Render.com deployment config
+7.2  LangGraph State Definition
+# app/graph/state.pyfrom typing import TypedDict, Optional, List, Anyfrom datetime import datetimeclass ExperimentState(TypedDict):    # ─── Input ───────────────────────────────────────────    hypothesis:        str    experiment_id:     str    domain:            Optional[str]    # ─── Literature QC ───────────────────────────────────    novelty_signal:    Optional[str]   # 'not_found' | 'similar_exists' | 'exact_match'    qc_references:     Optional[List[dict]]    # ─── Feedback Context (Stretch Goal) ─────────────────    relevant_feedback: Optional[List[dict]]    # ─── Experiment Plan ─────────────────────────────────    protocol:          Optional[List[dict]]    materials:         Optional[List[dict]]    budget:            Optional[dict]    timeline:          Optional[List[dict]]    validation:        Optional[dict]    plan_summary:      Optional[str]    # ─── Meta ────────────────────────────────────────────    error:             Optional[str]    completed_at:      Optional[str]
+7.3  LangGraph Pipeline Compilation
+# app/graph/pipeline.pyfrom langgraph.graph import StateGraph, ENDfrom app.graph.state import ExperimentStatefrom app.graph.nodes.validate_input    import validate_input_nodefrom app.graph.nodes.literature_qc    import literature_qc_nodefrom app.graph.nodes.feedback_injector import feedback_injector_nodefrom app.graph.nodes.plan_generator   import plan_generator_nodedef build_pipeline() -> StateGraph:    graph = StateGraph(ExperimentState)    # Register nodes    graph.add_node("validate_input",     validate_input_node)    graph.add_node("literature_qc",      literature_qc_node)    graph.add_node("feedback_injector",  feedback_injector_node)   # ★ Stretch    graph.add_node("plan_generator",     plan_generator_node)    # Define edges    graph.set_entry_point("validate_input")    graph.add_edge("validate_input",    "literature_qc")    graph.add_edge("literature_qc",     "feedback_injector")       # ★ Stretch    graph.add_edge("feedback_injector", "plan_generator")          # ★ Stretch    graph.add_edge("plan_generator",    END)    # Conditional edge: if validation fails, go straight to END    graph.add_conditional_edges(        "validate_input",        lambda s: "literature_qc" if not s.get("error") else END,    )    return graph.compile()pipeline = build_pipeline()
+7.4  Node: literature_qc
+# app/graph/nodes/literature_qc.pyimport httpx, jsonfrom app.graph.state import ExperimentStatefrom app.config import settingsS2_BASE  = "https://api.semanticscholar.org/graph/v1"HEADERS_S2 = {"x-api-key": settings.SEMANTIC_SCHOLAR_API_KEY}async def literature_qc_node(state: ExperimentState) -> ExperimentState:    hypothesis = state["hypothesis"]    # ── 1. Semantic Scholar search ────────────────────────────────────────    async with httpx.AsyncClient(timeout=15) as client:        resp = await client.get(            f"{S2_BASE}/paper/search",            params={                "query":  hypothesis[:200],                "fields": "title,authors,year,abstract,externalIds,url",                "limit":  5,            },            headers=HEADERS_S2,        )    papers = resp.json().get("data", [])    # ── 2. Classify novelty ───────────────────────────────────────────────    # GPT-4o judges similarity using abstracts    from app.services.openai_client import classify_novelty    novelty, refs = await classify_novelty(hypothesis, papers)    # ── 3. Update state ───────────────────────────────────────────────────    return {        **state,        "novelty_signal": novelty,        "qc_references":  refs,    }
+7.5  Node: plan_generator
+# app/graph/nodes/plan_generator.pyimport jsonfrom openai import AsyncOpenAIfrom app.graph.state import ExperimentStatefrom app.config import settingsclient = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)PLAN_SYSTEM_PROMPT = open("app/prompts/plan_generator.txt").read()async def plan_generator_node(state: ExperimentState) -> ExperimentState:    hypothesis       = state["hypothesis"]    novelty_signal   = state.get("novelty_signal", "not_found")    qc_refs          = state.get("qc_references", [])    feedback_context = state.get("relevant_feedback", [])   # ★ Stretch    # Build few-shot block from scientist corrections ★    few_shot_block = ""    if feedback_context:        few_shot_block = "\n\nRELEVANT EXPERT CORRECTIONS FROM PRIOR PLANS:\n"        for fb in feedback_context[:3]:            few_shot_block += f"Section: {fb['section']}\n"            few_shot_block += f"Correction: {fb['corrected_text']}\n---\n"    user_message = f"""Hypothesis: {hypothesis}Literature QC Signal: {novelty_signal}Prior References: {json.dumps(qc_refs, indent=2)}{few_shot_block}Generate a complete, operationally realistic experiment plan as JSON.Respond ONLY with valid JSON matching the schema below:{{  "protocol": [...],  "materials": [...],  "budget": {{}},  "timeline": [...],  "validation": {{}},  "summary": "..."}}"""    response = await client.chat.completions.create(        model="gpt-4o",        messages=[            {"role": "system", "content": PLAN_SYSTEM_PROMPT},            {"role": "user",   "content": user_message},        ],        response_format={"type": "json_object"},        max_tokens=4096,        temperature=0.2,    )    plan = json.loads(response.choices[0].message.content)    return {**state, **plan}
+
+8. REST API Endpoint Reference
+8.1  Core Endpoints
+Method
+Endpoint
+Description
+Auth
+POST
+/api/v1/experiments
+Submit a new scientific hypothesis; returns experiment_id
+Anon
+GET
+/api/v1/experiments/{id}
+Fetch a stored experiment with plan and QC results
+Anon
+GET
+/api/v1/experiments/{id}/stream
+SSE stream — live pipeline events as they occur
+Anon
+GET
+/api/v1/experiments
+List all experiments (paginated)
+Anon
+POST
+/api/v1/reviews
+★ Submit a scientist review for a plan section
+Anon
+GET
+/api/v1/feedback
+★ List feedback entries (for admin/debugging)
+Anon
+GET
+/health
+Health check — returns version and status
+None
+
+8.2  POST /api/v1/experiments — Request Body
+{  "hypothesis": "Supplementing C57BL/6 mice with Lactobacillus rhamnosus GG for 4 weeks                  will reduce intestinal permeability by at least 30% compared to controls,                  measured by FITC-dextran assay.",  "domain": "gut_health"    // optional — auto-detected by LLM if omitted}
+8.3  GET /api/v1/experiments/{id}/stream — SSE Event Types
+Event Type
+When Fired
+Payload
+pipeline_started
+Immediately after submission accepted
+{"experiment_id": "...", "status": "running"}
+qc_result
+After literature_qc node completes
+{"novelty_signal": "...", "references": [...]}
+plan_section
+As each plan section is generated
+{"section": "protocol", "data": [...]}
+plan_complete
+When full plan is saved to DB
+{"plan_id": "...", "tokens_used": 2840}
+error
+If any node fails
+{"message": "...", "node": "..."}
+
+8.4  POST /api/v1/reviews — Request Body (Stretch Goal)
+{  "plan_id":        "uuid-of-the-plan",  "experiment_id":  "uuid-of-experiment",  "section":        "protocol",        // protocol | materials | budget | timeline | validation  "rating":         3,                 // 1-5  "correction":     "Step 4 should use 200uL not 100uL; low volume causes incomplete lysis.",  "is_critical":    true,  "reviewer_role":  "PI"}
+8.5  requirements.txt
+fastapi==0.115.0uvicorn[standard]==0.30.1langgraph==0.2.35langchain==0.3.7langchain-openai==0.2.9langsmith==0.1.147openai==1.52.0httpx==0.27.2supabase==2.9.0pydantic-settings==2.5.2python-dotenv==1.0.1sse-starlette==2.1.3
+
+9. Frontend Architecture (Next.js 14)
+9.1  Project Structure
+ai-scientist-frontend/├── app/│   ├── layout.tsx                  # Root layout — fonts, providers│   ├── page.tsx                    # Home — hypothesis input form│   ├── experiment/│   │   └── [id]/│   │       ├── page.tsx            # Experiment results page│   │       └── review/│   │           └── page.tsx        # ★ Scientist review page│   └── history/│       └── page.tsx                # Experiment history list│├── components/│   ├── ui/                         # shadcn/ui base components│   ├── hypothesis-input.tsx        # Large text area + submit│   ├── qc-badge.tsx                # Novelty signal pill (colour-coded)│   ├── reference-card.tsx          # Literature reference display│   ├── plan-viewer/│   │   ├── plan-shell.tsx          # Tabbed container│   │   ├── protocol-tab.tsx        # Step-by-step protocol view│   │   ├── materials-tab.tsx       # Reagents table with costs│   │   ├── budget-tab.tsx          # Budget breakdown + total│   │   ├── timeline-tab.tsx        # Gantt-style timeline│   │   └── validation-tab.tsx      # Success/failure criteria│   ├── stream-progress.tsx         # Live SSE progress indicator│   └── review-panel.tsx            # ★ Scientist review form│├── lib/│   ├── api.ts                      # API client functions│   ├── stream.ts                   # SSE hook (useExperimentStream)│   └── supabase.ts                 # Supabase browser client│├── store/│   └── experiment-store.ts         # Zustand store│├── types/│   └── index.ts                    # Shared TypeScript types│└── package.json
+9.2  Key Component: Hypothesis Input
+// components/hypothesis-input.tsx'use client'import { useState } from 'react'import { useRouter } from 'next/navigation'import { Button } from '@/components/ui/button'import { Textarea } from '@/components/ui/textarea'import { api } from '@/lib/api'export function HypothesisInput() {  const [hypothesis, setHypothesis] = useState('')  const [loading, setLoading]       = useState(false)  const router = useRouter()  async function handleSubmit() {    setLoading(true)    const { experiment_id } = await api.createExperiment({ hypothesis })    router.push(`/experiment/${experiment_id}`)  }  return (    <div className="max-w-3xl mx-auto space-y-4">      <Textarea        placeholder="Enter your scientific hypothesis..."        className="min-h-[160px] text-base"        value={hypothesis}        onChange={e => setHypothesis(e.target.value)}      />      <Button        onClick={handleSubmit}        disabled={loading || hypothesis.trim().length < 20}        size="lg" className="w-full"      >        {loading ? 'Running Pipeline...' : 'Generate Experiment Plan'}      </Button>    </div>  )}
+9.3  Key Hook: SSE Streaming
+// lib/stream.ts'use client'import { useEffect } from 'react'import { useExperimentStore } from '@/store/experiment-store'export function useExperimentStream(experimentId: string) {  const { setQCResult, setPlanSection, setComplete, setError } = useExperimentStore()  useEffect(() => {    const es = new EventSource(      `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/experiments/${experimentId}/stream`    )    es.addEventListener('qc_result',    e => setQCResult(JSON.parse(e.data)))    es.addEventListener('plan_section', e => setPlanSection(JSON.parse(e.data)))    es.addEventListener('plan_complete', e => { setComplete(true); es.close() })    es.addEventListener('error',        e => { setError(JSON.parse(e.data).message); es.close() })    return () => es.close()  }, [experimentId])}
+9.4  package.json Dependencies
+{  "dependencies": {    "next":                 "14.2.15",    "react":                "^18.3.1",    "react-dom":            "^18.3.1",    "@supabase/supabase-js": "^2.45.4",    "@tanstack/react-query": "^5.59.0",    "zustand":              "^5.0.1",    "tailwindcss":          "^3.4.13",    "@radix-ui/react-tabs": "^1.1.1",    "lucide-react":         "^0.453.0",    "clsx":                 "^2.1.1",    "framer-motion":        "^11.11.7"  },  "devDependencies": {    "typescript":     "^5.6.3",    "@types/node":    "^22.7.4",    "@types/react":   "^18.3.11"  }}
+
+10. Feature Module Specifications
+10.1  Module 1 — Hypothesis Input & Validation
+Property
+Detail
+Frontend component
+HypothesisInput (hypothesis-input.tsx)
+Backend node
+validate_input_node in graph/nodes/validate_input.py
+Validation rules
+Min 20 chars · Max 2000 chars · Must contain measurable outcome language
+LLM role
+GPT-4o classifies domain (diagnostics / cell_biology / gut_health / climate / other)
+DB action
+Creates row in experiments table with status='pending'
+Error handling
+Returns structured error if hypothesis is too vague (no measureable outcome detected)
+
+10.2  Module 2 — Literature Quality Control
+Property
+Detail
+Backend node
+literature_qc_node
+Primary source
+Semantic Scholar API (key: s2k-7tsoZ3orl43EDfDE0uRVLhKbIjAYnCnq8g8WBVny)
+Fallback source
+Serper Web Search (key: e42d5136b895c98dd4f23a91e899db9d6d4ff510)
+Search strategy
+Keyword extraction from hypothesis → S2 paper search → abstract retrieval
+Classification
+GPT-4o reads top-5 abstracts and classifies novelty signal
+Novelty signals
+not_found · similar_exists · exact_match
+Output
+Signal + up to 3 references (title, authors, year, DOI/URL, abstract snippet)
+Frontend display
+Colour-coded badge (green/amber/red) + collapsible reference cards
+DB action
+Saves result to literature_qc_results; updates experiment status='qc_done'
+
+10.3  Module 3 — Experiment Plan Generator
+Plan Section
+Detail
+GPT-4o Output Format
+Protocol
+Step-by-step methodology grounded in real published protocols (protocols.io, bio-protocol.org)
+Array of {step_number, title, description, duration_hours, safety_notes}
+Materials
+Specific reagents with catalog numbers, suppliers (Thermo Fisher, Sigma-Aldrich, Promega), quantities, and per-unit costs
+Array of {name, catalog_no, supplier, unit, quantity, unit_cost_usd, total_cost_usd}
+Budget
+Realistic line-item cost estimate; GPT-4o uses current supplier pricing as reference
+Object: {line_items, subtotal_reagents, subtotal_equipment, subtotal_labour, contingency_pct, total_usd}
+Timeline
+Phased breakdown with dependencies; expressed in weeks
+Array of {phase, description, week_start, week_end, depends_on, tasks[]}
+Validation
+How success or failure will be measured; includes controls, positive/negative controls, and statistical tests
+Object: {success_criteria[], failure_criteria[], controls[], assays[], statistical_tests[]}
+
+GPT-4o System Prompt Principles:
+Grounding: Cite real protocol steps from protocols.io style repositories, not invented procedures.
+Specificity: Every reagent must have a real catalog number — no generic placeholders.
+Realism: Budget must reflect actual 2024-2025 supplier pricing, not ballpark guesses.
+Actionability: A lab technician must be able to read the protocol and execute without clarification.
+JSON output: Respond only with valid JSON matching the ExperimentPlan schema.
+
+
+11. Stretch Goal — Scientist Review & Learning Loop
+Stretch Goal Status:  INCLUDED IN FULL SCOPE. This is the highest-value differentiator — it transforms the tool from a one-shot generator into a platform that compounds in quality with every expert review.
+
+11.1  Architecture Overview
+Flow:  Scientist views generated plan       │       ▼  Scientist uses Review Panel (section-by-section)       │  Rating (1-5) + Free-text correction + Is-critical flag       │       ▼  POST /api/v1/reviews  →  saved to scientist_reviews table       │       ▼  Background task: embed correction using OpenAI text-embedding-3-small       │  → stored in feedback_store with experiment domain tag       │       ▼  Next plan generation for similar domain:  feedback_injector node queries pgvector for top-3 matching corrections       │  cosine similarity search on hypothesis embedding       │       ▼  Corrections injected as few-shot context into GPT-4o plan_generator prompt       │       ▼  New plan reflects expert corrections without re-prompting
+11.2  Feedback Injector Node
+# app/graph/nodes/feedback_injector.pyfrom app.services.embedding import get_embeddingfrom app.services.supabase_client import supabasefrom app.graph.state import ExperimentStateasync def feedback_injector_node(state: ExperimentState) -> ExperimentState:    hypothesis = state["hypothesis"]    # Embed the current hypothesis    embedding = await get_embedding(hypothesis)    # Query pgvector for top-3 most similar past corrections    result = supabase.rpc("match_feedback", {        "query_embedding": embedding,        "match_threshold": 0.75,        "match_count": 3    }).execute()    feedback = result.data or []    # Increment usage counter for retrieved entries    for fb in feedback:        supabase.table("feedback_store") \            .update({"times_used": fb["times_used"] + 1}) \            .eq("id", fb["id"]).execute()    return {**state, "relevant_feedback": feedback}
+11.3  Supabase RPC Function for pgvector Similarity Search
+-- Run in Supabase SQL EditorCREATE OR REPLACE FUNCTION match_feedback(    query_embedding vector(1536),    match_threshold float DEFAULT 0.75,    match_count     int   DEFAULT 3)RETURNS TABLE (    id             uuid,    section        text,    corrected_text text,    correction_note text,    times_used     int,    similarity     float)LANGUAGE sql STABLE AS $$    SELECT        id, section, corrected_text, correction_note, times_used,        1 - (embedding <=> query_embedding) AS similarity    FROM feedback_store    WHERE 1 - (embedding <=> query_embedding) > match_threshold    ORDER BY embedding <=> query_embedding    LIMIT match_count;$$;
+11.4  Review Panel UI
+The Review Panel component presents each plan section as an independently reviewable card:
+Star rating (1-5) for scientific accuracy of the section
+Free-text correction field — what the correct value/approach should be
+'Mark as Critical' toggle — critical corrections are prioritised in future retrieval
+Reviewer role selector (PI / Postdoc / Technician) for weighted feedback in future versions
+Submit button fires POST /api/v1/reviews with full structured payload
+After submission: user sees 'Correction saved — this will improve future plans' confirmation
+
+
+12. Deployment Guide
+12.1  Backend Deployment — Render.com (Free Tier)
+Dockerfile (place at backend root):
+FROM python:3.12-slimWORKDIR /appCOPY requirements.txt .RUN pip install --no-cache-dir -r requirements.txtCOPY . .EXPOSE 8000CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+render.yaml (place at backend root):
+services:  - type: web    name: ai-scientist-api    runtime: docker    plan: free    envVars:      - key: OPENAI_API_KEY        sync: false      - key: SUPABASE_URL        sync: false      - key: SUPABASE_ANON_KEY        sync: false      - key: SERPER_API_KEY        sync: false      - key: SEMANTIC_SCHOLAR_API_KEY        sync: false      - key: LANGCHAIN_TRACING_V2        value: "true"      - key: LANGCHAIN_API_KEY        sync: false
+Render deployment steps:
+Push backend to a GitHub repository.
+Log in to render.com and click 'New Web Service'.
+Connect your GitHub repository.
+Render auto-detects the Dockerfile. Select 'Free' plan.
+Add all environment variables from Section 4.1.
+Click 'Create Web Service'. Render builds and deploys automatically.
+Copy the generated .onrender.com URL — this is your NEXT_PUBLIC_API_BASE_URL.
+
+12.2  Frontend Deployment — Vercel (Free Tier)
+Push frontend to a GitHub repository (can be same monorepo under /frontend).
+Go to vercel.com, click 'Add New Project', import your GitHub repo.
+Set Root Directory to frontend/ if using monorepo.
+Add environment variables from Section 4.2.
+Set NEXT_PUBLIC_API_BASE_URL to your Render backend URL.
+Click 'Deploy'. Vercel builds and deploys in under 2 minutes.
+Update CORS_ORIGINS in your backend .env to include the generated Vercel URL.
+
+12.3  Supabase — Final Setup Checklist
+Run all CREATE TABLE statements from Section 6 in the Supabase SQL Editor.
+Run the match_feedback RPC function from Section 11.3.
+Enable Row Level Security (Section 6.7).
+Enable pgvector extension (Section 6.1).
+Confirm the REST URL works: https://kdzzyxihfxxcsnifcnpi.supabase.co/rest/v1/
+
+
+13. Local Development Workflow
+13.1  Backend Setup
+# 1. Clone and enter backend directorygit clone <your-repo-url>cd ai-scientist-backend# 2. Create virtual environmentpython -m venv venvsource venv/bin/activate   # Windows: venv\Scripts\activate# 3. Install dependenciespip install -r requirements.txt# 4. Copy and fill in environment filecp .env.example .env# (paste keys from Section 4.1)# 5. Start the development serveruvicorn app.main:app --reload --port 8000# Server available at: http://localhost:8000# API docs (Swagger UI) at: http://localhost:8000/docs
+13.2  Frontend Setup
+# 1. Enter frontend directorycd ai-scientist-frontend# 2. Install dependenciesnpm install# 3. Copy and fill in environment filecp .env.example .env.local# (paste keys from Section 4.2)# 4. Start development servernpm run dev# App available at: http://localhost:3000
+13.3  Running the Full Pipeline Locally (Test)
+# With both servers running, send a test request:curl -X POST http://localhost:8000/api/v1/experiments \  -H "Content-Type: application/json" \  -d '{    "hypothesis": "Replacing sucrose with trehalose as a cryoprotectant will increase    post-thaw viability of HeLa cells by at least 15 percentage points compared to DMSO.",    "domain": "cell_biology"  }'# Expected response:# { "experiment_id": "uuid-here", "status": "pending" }# Then open browser: http://localhost:3000/experiment/<uuid># Watch the SSE stream deliver QC results and plan sections in real-time.
+13.4  LangSmith Trace Verification
+After running a test, go to smith.langchain.com → your ai-scientist project. You will see a full execution trace including: total tokens used, latency per node, full input/output for each LangGraph node, and any errors with stack traces. This is essential for debugging plan quality issues and optimising prompt performance.
+
+14. Recommended Development Timeline
+Phase
+Day(s)
+Tasks
+Deliverable
+1 — Foundation
+Day 1
+Supabase tables setup · FastAPI scaffold · LangGraph state + pipeline skeleton · Next.js project init · Environment config
+Running hello-world pipeline end-to-end
+2 — Literature QC
+Day 2
+S2 API integration · Serper fallback · GPT-4o novelty classifier · QC result saved to DB · Frontend QC badge + reference cards
+Working QC module with real paper results
+3 — Plan Generator
+Days 3-4
+GPT-4o plan generator node · JSON schema validation · SSE streaming · Protocol/Materials/Budget/Timeline/Validation UI tabs
+Full plan generated and displayed for all 4 sample inputs
+4 — Polish & UX
+Day 5
+Loading states · Error handling · Copy-to-clipboard for materials · Budget chart · Mobile responsive layout · Framer Motion transitions
+Polished, demo-ready UI
+5 — Stretch Goal
+Day 6
+Scientist Review panel · POST /reviews endpoint · Embedding + pgvector store · feedback_injector node · RPC function
+Live demo: correction → improved next plan
+6 — Deploy & Test
+Day 7
+Render.com backend deploy · Vercel frontend deploy · CORS config · End-to-end test on all 4 sample inputs · LangSmith trace review
+Live production URL ready for submission
+
+
+15. Security Considerations
+Risk
+Mitigation
+API key exposure in frontend
+Only NEXT_PUBLIC_ prefixed env vars (Supabase anon key) go to the client. OpenAI, Serper, S2 keys stay server-side only in FastAPI.
+Supabase anon key abuse
+Row Level Security enabled on all tables. Anon key can only read/insert — not delete or update arbitrary rows.
+Prompt injection via hypothesis input
+Input is sanitised (stripped to 2000 chars), validated by Pydantic, and passed as a user message (not system message). No user input enters the system prompt.
+OpenAI cost overrun
+max_tokens=4096 enforced per request. Rate limiting middleware added to FastAPI (slowapi library — 10 req/min per IP).
+CORS
+CORS_ORIGINS env var restricts allowed origins — only Vercel domain and localhost in development.
+Sensitive data in logs
+LangSmith traces are project-scoped and require API key to view. API keys are never logged in application logs.
+
+
+16. External Resources Referenced in Plan Generation
+16.1  Protocol Repositories (used in GPT-4o system prompt context)
+Source
+URL
+Usage in Plan Generator
+protocols.io
+https://www.protocols.io
+Primary source — structured, peer-reviewed lab protocols
+Bio-protocol
+https://bio-protocol.org
+Peer-reviewed, linked to original publications
+Nature Protocols
+https://www.nature.com/nprot
+Premium detail for high-complexity protocols
+OpenWetWare
+https://openwetware.org
+Community protocols, useful for novel variations
+
+16.2  Supplier Databases (for catalog number grounding)
+Supplier
+URL
+Catalogue Coverage
+Thermo Fisher Scientific
+https://www.thermofisher.com
+Reagents, cell culture, PCR, antibodies
+Sigma-Aldrich (Merck)
+https://www.sigmaaldrich.com
+Chemicals, buffers, standards
+Promega
+https://www.promega.com
+Assays, luciferase, cell viability
+QIAGEN
+https://www.qiagen.com
+Extraction kits, qPCR reagents
+IDT
+https://www.idtdna.com
+Primers, oligonucleotides, qPCR
+ATCC
+https://www.atcc.org
+Cell lines and cell line protocols
+Addgene
+https://www.addgene.org
+Plasmids, cloning, transfection
+
+
+17. Glossary
+Term
+Definition
+LangGraph
+An open-source orchestration library by LangChain that models AI pipelines as stateful directed graphs with explicit node transitions.
+LangSmith
+Observability platform for LangChain/LangGraph applications. Provides full execution traces, token counts, and latency metrics.
+SSE
+Server-Sent Events — a one-directional HTTP streaming protocol used to push real-time pipeline progress events to the browser.
+pgvector
+A PostgreSQL extension that enables vector similarity search. Used here to find similar past scientist corrections for few-shot injection.
+HNSW
+Hierarchical Navigable Small World — an approximate nearest-neighbour index algorithm used by pgvector for fast similarity search at scale.
+Few-shot context
+Providing examples of correct outputs within the LLM prompt so that the model generates outputs that match the demonstrated pattern.
+Novelty signal
+The output of the Literature QC node: one of 'not_found', 'similar_exists', or 'exact_match' — indicating how novel the hypothesis is relative to published work.
+CRO
+Contract Research Organisation — a specialist lab that receives experimental briefs and generates proposals; The AI Scientist automates this process.
+PI
+Principal Investigator — the lead scientist on a research project who would typically review and approve an experiment plan.
+RAG
+Retrieval-Augmented Generation — providing retrieved context (e.g. prior feedback, literature) to an LLM alongside its generative prompt.
+
+
+
+The AI Scientist  ·  Developer Report v1.0  ·  April 2026  ·  Fulcrum Science × Hack-Nation

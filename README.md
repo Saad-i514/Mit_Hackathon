@@ -166,20 +166,14 @@ vercel --prod
 
 Set environment variables in Vercel dashboard.
 
-### Backend → Render.com
+### Backend → Railway
 
-Push to GitHub. Render auto-deploys from `render.yaml` configuration.
+1. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
+2. Set **Root Directory** to `backend`
+3. Add environment variables in Railway dashboard
+4. Railway auto-deploys on every push
 
-Set secret environment variables in Render dashboard (marked `sync: false`).
-
-### Database → Supabase
-
-1. Create a new Supabase project
-2. Enable the `vector` extension in the SQL editor: `CREATE EXTENSION IF NOT EXISTS vector;`
-3. Run `migrations/001_initial_schema.sql` in the SQL editor
-4. Copy connection details to environment variables
-
-See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment instructions.
+See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for the complete step-by-step guide.
 
 ## Monitoring
 

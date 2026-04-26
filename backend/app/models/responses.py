@@ -48,6 +48,7 @@ class Paper(BaseModel):
     citation_count: Optional[int] = None
     abstract: Optional[str] = None
     url: Optional[str] = None
+    source: Optional[str] = None
 
 
 class NoveltyAssessment(BaseModel):
@@ -105,7 +106,7 @@ class Phase(BaseModel):
     duration_days: int
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    dependencies: List[int] = Field(default_factory=list)
+    dependencies: List[Any] = Field(default_factory=list)
     description: str
 
 
@@ -171,6 +172,10 @@ class ExperimentPlanMetadata(BaseModel):
     model_version: str = "gpt-4o"
     few_shot_examples_used: int = 0
     requires_expert_review: List[str] = Field(default_factory=list)
+    hypothesis_quality_score: Optional[int] = None
+    hypothesis_refined: bool = False
+    protocols_io_matches: List[Dict[str, Any]] = Field(default_factory=list)
+    reproducibility_assessment: Optional[Dict[str, Any]] = None
 
 
 class ExperimentPlan(BaseModel):

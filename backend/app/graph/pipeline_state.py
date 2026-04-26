@@ -25,6 +25,7 @@ class PipelineState(TypedDict):
     domain: Optional[str]
     novelty_assessment: Optional[NoveltyAssessment]
     experiment_plan: Optional[ExperimentPlan]
+    hypothesis_refinement: Optional[Dict[str, Any]]
     
     # Error handling
     error: Optional[str]

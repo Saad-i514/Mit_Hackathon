@@ -15,6 +15,9 @@ from app.services.literature_qc import LiteratureQCEngine
 from app.services.plan_generator import PlanGenerator
 from app.services.sse_manager import SSEManager
 from app.services.langsmith import get_langsmith_logger
+from app.services.hypothesis_refiner import HypothesisRefiner
+from app.services.protocols_io import ProtocolsIOClient
+from app.services.reproducibility_scorer import ReproducibilityScorer
 from app.models.responses import ValidationResult, NoveltyAssessment
 
 
@@ -36,7 +39,10 @@ class AIPipeline:
         hypothesis_validator: HypothesisValidator,
         literature_qc_engine: LiteratureQCEngine,
         plan_generator: PlanGenerator,
-        sse_manager: SSEManager
+        sse_manager: SSEManager,
+        hypothesis_refiner: Optional[HypothesisRefiner] = None,
+        protocols_io_client: Optional[ProtocolsIOClient] = None,
+        reproducibility_scorer: Optional[ReproducibilityScorer] = None,
     ):
         """
         Initialize AI Pipeline
@@ -51,6 +57,9 @@ class AIPipeline:
         self.literature_qc_engine = literature_qc_engine
         self.plan_generator = plan_generator
         self.sse_manager = sse_manager
+        self.hypothesis_refiner = hypothesis_refiner
+        self.protocols_io_client = protocols_io_client
+        self.reproducibility_scorer = reproducibility_scorer
         self.langsmith_logger = get_langsmith_logger()
         
         # Build the LangGraph workflow
@@ -139,7 +148,27 @@ class AIPipeline:
             )
             
             # Validate hypothesis
-            validation_result = await self.hypothesis_validator.validate(state["hypothesis"])
+            active_hypothesis = state["hypothesis"]
+            refinement = None
+            if self.hypothesis_refiner:
+                refinement = await self.hypothesis_refiner.refine(active_hypothesis)
+                state["hypothesis_refinement"] = refinement
+                score = int(refinement.get("score", 100))
+                if score < 70:
+                    rewrites = refinement.get("suggested_rewrites") or []
+                    if rewrites:
+                        best = rewrites[0].get("hypothesis")
+                        if best:
+                            active_hypothesis = best.strip()
+                            state["hypothesis"] = active_hypothesis
+                            await self.sse_manager.emit_progress(
+                                stage="validation",
+                                progress_percent=15,
+                                message="Hypothesis auto-refined for higher scientific testability",
+                                details={"quality_score": score},
+                            )
+
+            validation_result = await self.hypothesis_validator.validate(active_hypothesis)
             
             # Update state
             state["validation_result"] = validation_result
@@ -158,7 +187,11 @@ class AIPipeline:
                 details={
                     "domain": validation_result.domain,
                     "is_valid": validation_result.is_valid,
-                    "testable_claim": validation_result.testable_claim
+                    "testable_claim": validation_result.testable_claim,
+                    "hypothesis_quality_score": (
+                        int(state.get("hypothesis_refinement", {}).get("score", 100))
+                        if state.get("hypothesis_refinement") else None
+                    ),
                 }
             )
             
@@ -297,11 +330,31 @@ class AIPipeline:
             )
             
             # Generate plan
+            protocol_matches = []
+            if self.protocols_io_client:
+                protocol_matches = await self.protocols_io_client.search_protocols(
+                    state["hypothesis"],
+                    limit=5,
+                )
+
             experiment_plan = await self.plan_generator.generate_plan(
                 hypothesis=state["hypothesis"],
                 domain=state["domain"],
-                novelty_assessment=state["novelty_assessment"]
+                novelty_assessment=state["novelty_assessment"],
+                protocol_matches=protocol_matches,
             )
+
+            # Optional reproducibility scoring pass.
+            if self.reproducibility_scorer:
+                reproducibility = await self.reproducibility_scorer.score(
+                    experiment_plan.model_dump()
+                )
+                experiment_plan.metadata.reproducibility_assessment = reproducibility
+
+            if state.get("hypothesis_refinement"):
+                score = int(state["hypothesis_refinement"].get("score", 100))
+                experiment_plan.metadata.hypothesis_quality_score = score
+                experiment_plan.metadata.hypothesis_refined = score < 70
             
             # Update state
             state["experiment_plan"] = experiment_plan
@@ -320,7 +373,12 @@ class AIPipeline:
                 details={
                     "few_shot_examples_used": experiment_plan.metadata.few_shot_examples_used,
                     "requires_expert_review": experiment_plan.metadata.requires_expert_review,
-                    "total_budget": experiment_plan.materials.total_budget
+                    "total_budget": experiment_plan.materials.total_budget,
+                    "protocol_matches_found": len(protocol_matches),
+                    "reproducibility_score": (
+                        experiment_plan.metadata.reproducibility_assessment.get("total_score")
+                        if experiment_plan.metadata.reproducibility_assessment else None
+                    ),
                 }
             )
             
@@ -473,6 +531,7 @@ class AIPipeline:
             "domain": None,
             "novelty_assessment": None,
             "experiment_plan": None,
+            "hypothesis_refinement": None,
             "error": None,
             "error_code": None,
             "error_stage": None,
@@ -545,7 +604,10 @@ def create_ai_pipeline(
     hypothesis_validator: HypothesisValidator,
     literature_qc_engine: LiteratureQCEngine,
     plan_generator: PlanGenerator,
-    sse_manager: SSEManager
+    sse_manager: SSEManager,
+    hypothesis_refiner: Optional[HypothesisRefiner] = None,
+    protocols_io_client: Optional[ProtocolsIOClient] = None,
+    reproducibility_scorer: Optional[ReproducibilityScorer] = None,
 ) -> AIPipeline:
     """
     Factory function to create AIPipeline instance
@@ -563,5 +625,8 @@ def create_ai_pipeline(
         hypothesis_validator=hypothesis_validator,
         literature_qc_engine=literature_qc_engine,
         plan_generator=plan_generator,
-        sse_manager=sse_manager
+        sse_manager=sse_manager,
+        hypothesis_refiner=hypothesis_refiner,
+        protocols_io_client=protocols_io_client,
+        reproducibility_scorer=reproducibility_scorer,
     )

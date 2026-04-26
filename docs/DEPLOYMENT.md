@@ -1,104 +1,110 @@
-# Deployment Guide
+# Deployment Guide — Railway + Vercel + Supabase
 
-This guide covers deploying the AI Scientist Platform to production using Vercel (frontend), Render.com (backend), and Supabase (database).
-
-## Prerequisites
-
-- GitHub account with the repository pushed
-- Supabase account
-- Vercel account
-- Render.com account
-- All required API keys (see README.md)
+This guide covers deploying the AI Scientist Platform using:
+- **Railway** — backend FastAPI server
+- **Vercel** — frontend Next.js app
+- **Supabase** — PostgreSQL database + Auth
 
 ---
 
 ## 1. Supabase Setup
 
-### 1.1 Create a new project
+### 1.1 Create project
 
-1. Go to [supabase.com](https://supabase.com) and create a new project
+1. Go to [supabase.com](https://supabase.com) → New project
 2. Choose a region close to your users
-3. Save the database password securely
+3. Save the database password
 
-### 1.2 Enable pgvector extension
+### 1.2 Enable pgvector
 
-In the Supabase SQL editor, run:
+In the Supabase SQL editor:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-### 1.3 Apply database migrations
+### 1.3 Apply migrations
 
-In the Supabase SQL editor, run the contents of each migration file in order:
+Run `backend/migrations/001_initial_schema.sql` in the SQL editor.
+
+### 1.4 Fix FK constraints (required)
+
+Run this in the SQL editor to point FKs at `auth.users`:
 
 ```sql
--- Run migrations/001_initial_schema.sql
--- (paste the full contents)
+ALTER TABLE hypotheses DROP CONSTRAINT IF EXISTS hypotheses_user_id_fkey;
+ALTER TABLE experiment_plans DROP CONSTRAINT IF EXISTS experiment_plans_user_id_fkey;
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_user_id_fkey;
+ALTER TABLE feedback_embeddings DROP CONSTRAINT IF EXISTS feedback_embeddings_scientist_id_fkey;
+
+ALTER TABLE hypotheses ADD CONSTRAINT hypotheses_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE experiment_plans ADD CONSTRAINT experiment_plans_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE experiment_plans ALTER COLUMN hypothesis_id DROP NOT NULL;
+ALTER TABLE reviews ADD CONSTRAINT reviews_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE feedback_embeddings ADD CONSTRAINT feedback_embeddings_scientist_id_fkey
+  FOREIGN KEY (scientist_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 ```
 
-### 1.4 Collect credentials
+### 1.5 Collect credentials
 
-From your Supabase project settings:
-
-- **Project URL**: Settings → API → Project URL
-- **Anon key**: Settings → API → Project API keys → `anon public`
-- **Service role key**: Settings → API → Project API keys → `service_role` (keep secret)
-- **JWT secret**: Settings → API → JWT Settings → JWT Secret
+From **Project Settings → API**:
+- Project URL
+- `anon` public key
+- `service_role` key (keep secret)
+- JWT Secret (under JWT Settings)
 
 ---
 
-## 2. Backend Deployment (Render.com)
+## 2. Backend Deployment (Railway)
 
-### 2.1 Connect repository
+### 2.1 Create Railway project
 
-1. Go to [render.com](https://render.com) and create a new account
-2. Click **New** → **Blueprint**
-3. Connect your GitHub repository
-4. Render will detect `render.yaml` automatically
+1. Go to [railway.app](https://railway.app) → New Project
+2. Click **Deploy from GitHub repo**
+3. Select your repository
+4. Set **Root Directory** to `backend`
 
-### 2.2 Configure environment variables
+Railway auto-detects Python via Nixpacks and uses `backend/Procfile` for the start command.
 
-In the Render dashboard for the `ai-scientist-backend` service, add these secret environment variables:
+### 2.2 Set environment variables
+
+In Railway dashboard → your service → **Variables**, add:
 
 | Key | Value |
 |-----|-------|
-| `OPENAI_API_KEY` | Your OpenAI API key |
+| `OPENAI_API_KEY` | Your OpenAI key |
 | `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_ANON_KEY` | Your Supabase anon key |
 | `SUPABASE_SERVICE_KEY` | Your Supabase service role key |
 | `SUPABASE_JWT_SECRET` | Your Supabase JWT secret |
-| `SEMANTIC_SCHOLAR_API_KEY` | Your Semantic Scholar API key |
-| `SERPER_API_KEY` | Your Serper API key |
-| `LANGCHAIN_API_KEY` | Your LangSmith API key (optional) |
+| `SEMANTIC_SCHOLAR_API_KEY` | Your Semantic Scholar key |
+| `SERPER_API_KEY` | Your Serper key |
+| `LANGCHAIN_API_KEY` | LangSmith key (optional) |
+| `LANGCHAIN_TRACING_V2` | `false` (set `true` if using LangSmith) |
+| `LANGCHAIN_PROJECT` | `ai-scientist-platform` |
 | `CORS_ORIGINS` | `https://your-app.vercel.app,http://localhost:3000` |
+| `APP_ENV` | `production` |
 
 ### 2.3 Deploy
 
-Click **Deploy** in the Render dashboard. The first deploy takes 3-5 minutes.
+Click **Deploy** — Railway builds and starts the server automatically.
 
-Verify deployment:
+Get your Railway URL from the **Settings → Domains** tab (e.g. `https://ai-scientist-backend.up.railway.app`).
+
+### 2.4 Verify
+
 ```bash
-curl https://your-backend.onrender.com/health
+curl https://your-backend.up.railway.app/health
 ```
 
-Expected response:
+Expected:
 ```json
-{
-  "status": "healthy",
-  "dependencies": {
-    "database": {"status": "healthy"},
-    "openai": {"status": "healthy"},
-    "semantic_scholar": {"status": "healthy"},
-    "serper": {"status": "healthy"}
-  }
-}
+{"status": "healthy", "dependencies": {...}}
 ```
-
-### 2.4 Auto-deploy
-
-Render auto-deploys on every push to the main branch. To disable, set `autoDeploy: false` in `render.yaml`.
 
 ---
 
@@ -106,155 +112,117 @@ Render auto-deploys on every push to the main branch. To disable, set `autoDeplo
 
 ### 3.1 Import project
 
-1. Go to [vercel.com](https://vercel.com) and create a new account
-2. Click **Add New** → **Project**
-3. Import your GitHub repository
-4. Set **Root Directory** to `frontend`
-5. Framework preset: **Next.js** (auto-detected)
+1. Go to [vercel.com](https://vercel.com) → Add New → Project
+2. Import your GitHub repository
+3. Set **Root Directory** to `frontend`
+4. Framework: **Next.js** (auto-detected)
 
-### 3.2 Configure environment variables
+### 3.2 Set environment variables
 
-In the Vercel project settings → Environment Variables, add:
+In Vercel → Project Settings → Environment Variables:
 
 | Key | Value | Environment |
 |-----|-------|-------------|
-| `NEXT_PUBLIC_API_URL` | `https://your-backend.onrender.com` | Production |
-| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL | All |
+| `NEXT_PUBLIC_API_URL` | `https://your-backend.up.railway.app` | Production |
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase URL | All |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key | All |
 
 ### 3.3 Deploy
 
 Click **Deploy**. Vercel builds and deploys automatically.
 
-### 3.4 Update CORS
+### 3.4 Update CORS on Railway
 
-After getting your Vercel URL (e.g., `https://ai-scientist-platform.vercel.app`), update the `CORS_ORIGINS` environment variable in Render to include it.
+After getting your Vercel URL, update `CORS_ORIGINS` in Railway to include it:
+```
+https://your-app.vercel.app,http://localhost:3000
+```
 
 ---
 
 ## 4. Post-Deployment Verification
 
-### 4.1 Health check
-
 ```bash
-curl https://your-backend.onrender.com/health
+# Backend health
+curl https://your-backend.up.railway.app/health
+
+# API docs
+open https://your-backend.up.railway.app/docs
+
+# Frontend
+open https://your-app.vercel.app
 ```
-
-### 4.2 API documentation
-
-Visit `https://your-backend.onrender.com/docs` to verify the OpenAPI docs are accessible.
-
-### 4.3 Metrics
-
-```bash
-curl https://your-backend.onrender.com/metrics
-```
-
-### 4.4 End-to-end test
-
-1. Open `https://your-app.vercel.app`
-2. Sign up for an account
-3. Submit a test hypothesis: *"Does increasing BDNF expression in hippocampal neurons improve spatial memory in aged mice?"*
-4. Verify the SSE stream shows progress through all 3 stages
-5. Verify the generated plan contains protocol steps, materials with catalog numbers, and a timeline
 
 ---
 
-## 5. Monitoring Setup
-
-### 5.1 Uptime monitoring
-
-Set up uptime monitoring for the health endpoint using any of:
-- [UptimeRobot](https://uptimerobot.com) (free tier available)
-- [Better Uptime](https://betteruptime.com)
-- Render's built-in health check alerts
-
-Configure: `GET https://your-backend.onrender.com/health` every 5 minutes.
-
-### 5.2 LangSmith dashboard
-
-If `LANGCHAIN_API_KEY` is configured:
-1. Go to [smith.langchain.com](https://smith.langchain.com)
-2. Open the `ai-scientist-platform` project
-3. View pipeline traces, token usage, and stage durations
-
-### 5.3 Application metrics
-
-Poll `GET /metrics` to track:
-- `requests.error_rate` — alert if > 5%
-- `pipeline.p95_seconds` — alert if > 90s
-- `validation.failure_rate` — alert if > 20%
-
----
-
-## 6. Database Maintenance
-
-### 6.1 Running new migrations
+## 5. Local Development
 
 ```bash
+# Backend
 cd backend
-python scripts/migrate.py migrate
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env       # Fill in your keys
+uvicorn app.main:app --reload --port 8000
+
+# Frontend (new terminal)
+cd frontend
+npm install
+cp .env.example .env.local  # Fill in your keys
+npm run dev
 ```
-
-### 6.2 Checking migration status
-
-```bash
-python scripts/migrate.py status
-```
-
-### 6.3 Rolling back
-
-```bash
-python scripts/migrate.py rollback --migration 001_initial_schema.sql
-```
-
-### 6.4 Backup
-
-Use Supabase's built-in point-in-time recovery (available on Pro plan) or schedule manual backups via the Supabase dashboard.
 
 ---
 
-## 7. Scaling Considerations
+## 6. Environment Variables Reference
 
-### Backend
+### Backend (Railway / `.env`)
 
-- Render Starter plan handles ~100 concurrent users
-- Upgrade to Standard plan for production traffic
-- The SSE connections are long-lived; ensure your plan supports enough concurrent connections
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | ✅ | OpenAI API key (GPT-4o access) |
+| `SUPABASE_URL` | ✅ | Supabase project URL |
+| `SUPABASE_ANON_KEY` | ✅ | Supabase anonymous key |
+| `SUPABASE_SERVICE_KEY` | ✅ | Supabase service role key |
+| `SUPABASE_JWT_SECRET` | ✅ | Supabase JWT secret |
+| `SEMANTIC_SCHOLAR_API_KEY` | ✅ | Semantic Scholar API key |
+| `SERPER_API_KEY` | ✅ | Serper web search key |
+| `CORS_ORIGINS` | ✅ | Comma-separated allowed origins |
+| `LANGCHAIN_API_KEY` | Optional | LangSmith tracing key |
+| `LANGCHAIN_TRACING_V2` | Optional | `true` to enable LangSmith |
+| `APP_ENV` | Optional | `production` or `development` |
 
-### Database
+### Frontend (Vercel / `.env.local`)
 
-- pgvector HNSW index handles similarity search efficiently up to ~1M embeddings
-- Monitor `feedback_embeddings` table size; consider partitioning at 10M+ rows
-
-### Rate Limits
-
-- OpenAI GPT-4o: 10,000 TPM on Tier 1; upgrade as needed
-- Semantic Scholar: 100 requests/second with API key
-- Serper: 2,500 queries/month on free tier; upgrade for production
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_API_URL` | ✅ | Backend Railway URL |
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Supabase anonymous key |
 
 ---
 
-## Troubleshooting
+## 7. Troubleshooting
 
-### Backend won't start
+**Backend won't start on Railway**
+- Check build logs in Railway dashboard
+- Ensure `backend/Procfile` exists: `web: uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Verify all required env vars are set
 
-Check Render logs for:
-- Missing environment variables → add them in Render dashboard
-- Import errors → check `requirements.txt` is complete
+**401 Unauthorized errors**
+- The backend validates tokens via Supabase API — ensure `SUPABASE_URL` and `SUPABASE_ANON_KEY` are correct
+- Check that the frontend `NEXT_PUBLIC_API_URL` points to the Railway backend URL
 
-### SSE stream disconnects immediately
+**CORS errors**
+- Update `CORS_ORIGINS` in Railway to include your Vercel domain
+- Format: `https://your-app.vercel.app,http://localhost:3000`
 
-- Verify `CORS_ORIGINS` includes your frontend URL
-- Check Render's request timeout (default 30s); SSE streams need longer — set `timeoutSeconds: 300` in render.yaml if needed
+**SSE stream disconnects**
+- Railway has a 30s request timeout by default — SSE streams need longer
+- In Railway dashboard → Service Settings → enable **TCP Proxy** or contact Railway support for streaming support
+- Alternative: set `RAILWAY_DEPLOYMENT_TIMEOUT=300` in Railway env vars
 
-### Database connection errors
-
-- Verify `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` are correct
-- Check Supabase project is not paused (free tier pauses after 1 week of inactivity)
-
-### OpenAI rate limit errors
-
-- The circuit breaker opens after 3 consecutive failures
-- Check `GET /metrics` for `pipeline_error` count
-- Verify your OpenAI API key has GPT-4o access
+**Database FK errors**
+- Run the FK migration SQL from Section 1.4 in Supabase SQL editor
+- The `users` table in `public` schema is separate from `auth.users` — all FKs must reference `auth.users`

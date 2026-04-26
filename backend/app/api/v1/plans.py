@@ -23,6 +23,9 @@ from app.services.plan_generator import get_plan_generator, PlanGenerator
 from app.services.sse_manager import create_sse_manager, SSEManager
 from app.services.semantic_scholar import get_semantic_scholar_client, SemanticScholarClient
 from app.services.serper import get_serper_client, SerperClient
+from app.services.protocols_io import get_protocols_io_client, ProtocolsIOClient
+from app.services.hypothesis_refiner import get_hypothesis_refiner, HypothesisRefiner
+from app.services.reproducibility_scorer import get_reproducibility_scorer, ReproducibilityScorer
 from app.graph.ai_pipeline import create_ai_pipeline, AIPipeline
 from app.utils.monitoring import metrics, PipelineTimer
 from supabase import Client as AsyncClient
@@ -36,6 +39,7 @@ async def get_pipeline_components(
     openai_client: OpenAIClient = Depends(get_openai_client),
     ss_client: SemanticScholarClient = Depends(get_semantic_scholar_client),
     serper_client: SerperClient = Depends(get_serper_client),
+    protocols_io_client: ProtocolsIOClient = Depends(get_protocols_io_client),
     db: AsyncClient = Depends(get_db_session)
 ) -> Dict[str, Any]:
     """Dependency to create all pipeline components"""
@@ -43,12 +47,17 @@ async def get_pipeline_components(
     hypothesis_validator = get_hypothesis_validator(openai_client)
     literature_qc_engine = get_literature_qc_engine(ss_client, serper_client, openai_client)
     plan_generator = get_plan_generator(openai_client, learning_engine)
+    hypothesis_refiner = get_hypothesis_refiner(openai_client)
+    reproducibility_scorer = get_reproducibility_scorer(openai_client)
 
     return {
         "hypothesis_validator": hypothesis_validator,
         "literature_qc_engine": literature_qc_engine,
         "plan_generator": plan_generator,
-        "learning_engine": learning_engine
+        "learning_engine": learning_engine,
+        "hypothesis_refiner": hypothesis_refiner,
+        "protocols_io_client": protocols_io_client,
+        "reproducibility_scorer": reproducibility_scorer,
     }
 
 
@@ -77,7 +86,6 @@ data: {"type": "error", "error_code": "...", "message": "..."}
 )
 async def generate_plan(
     request: GeneratePlanRequest,
-    background_tasks: BackgroundTasks,
     current_user: Dict[str, Any] = Depends(get_current_user),
     components: Dict[str, Any] = Depends(get_pipeline_components),
     db: AsyncClient = Depends(get_db_session)
@@ -104,18 +112,34 @@ async def generate_plan(
             hypothesis_validator=components["hypothesis_validator"],
             literature_qc_engine=components["literature_qc_engine"],
             plan_generator=components["plan_generator"],
-            sse_manager=sse_manager
+            sse_manager=sse_manager,
+            hypothesis_refiner=components["hypothesis_refiner"],
+            protocols_io_client=components["protocols_io_client"],
+            reproducibility_scorer=components["reproducibility_scorer"],
         )
         
-        # Start pipeline execution in background
-        background_tasks.add_task(
-            execute_pipeline_and_store,
-            ai_pipeline=ai_pipeline,
-            sse_manager=sse_manager,
-            hypothesis=request.hypothesis,
-            user_id=current_user.id,
-            db=db
+        # Start pipeline execution immediately.
+        # Using FastAPI BackgroundTasks with a streaming response can delay task
+        # execution until response completion, which causes no SSE progress events.
+        pipeline_task = asyncio.create_task(
+            execute_pipeline_and_store(
+                ai_pipeline=ai_pipeline,
+                sse_manager=sse_manager,
+                hypothesis=request.hypothesis,
+                user_id=current_user.id,
+                db=db,
+            )
         )
+
+        def _log_pipeline_task_result(task: asyncio.Task):
+            try:
+                exc = task.exception()
+                if exc:
+                    logger.error(f"Pipeline task failed with unhandled exception: {exc}")
+            except asyncio.CancelledError:
+                logger.warning("Pipeline task was cancelled")
+
+        pipeline_task.add_done_callback(_log_pipeline_task_result)
         
         # Return SSE stream
         return EventSourceResponse(
@@ -271,7 +295,7 @@ async def get_plan(
     try:
         # Fetch plan from database with RLS enforcement
         result = db.table("experiment_plans").select(
-            "*, hypotheses(hypothesis_text, domain)"
+            "*"
         ).eq("id", plan_id).eq("user_id", current_user.id).execute()
         
         if not result.data:

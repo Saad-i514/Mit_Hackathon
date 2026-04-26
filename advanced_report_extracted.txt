@@ -1,0 +1,1051 @@
+THE AI SCIENTIST
+Advanced Features — Developer Specification
+17 Production-Grade Feature Modules  |  All Free Services  |  Full Technical Spec
+Version 1.0  |  April 2026  |  Fulcrum Science × Hack-Nation
+Overview & Feature Index
+This document is the companion specification to the primary AI Scientist Developer Report. It provides full technical details — API references, data models, backend node specifications, frontend component designs, and implementation notes — for all 17 advanced features. Every feature is implemented exclusively with free-tier services. The only paid resource is the OpenAI GPT-4o API key already provisioned in the primary report.
+#
+Feature
+Category
+Primary Free Service
+Complexity
+F-01
+Multi-source literature engine
+Intelligence
+PubMed · OpenAlex · bioRxiv · Europe PMC
+Medium
+F-02
+Reagent intelligence engine
+Intelligence
+PubChem REST API
+Medium
+F-03
+Protocol similarity search
+Intelligence
+protocols.io public API
+Medium
+F-04
+Clinical trials radar
+Intelligence
+ClinicalTrials.gov API v2
+Low
+F-05
+Statistical power calculator
+Plan Quality
+Pure math — no API
+Low
+F-06
+Reproducibility scorer
+Plan Quality
+GPT-4o (existing key)
+Low
+F-07
+Risk & safety assessment
+Plan Quality
+GPT-4o + PubChem GHS data
+Medium
+F-08
+Three protocol variants
+Plan Quality
+GPT-4o (existing key)
+Low
+F-09
+Interactive protocol flowchart
+Scientist UI
+React Flow (MIT)
+Medium
+F-10
+Real-time Gantt timeline
+Scientist UI
+Custom D3.js / Frappe Gantt
+High
+F-11
+Export suite
+Scientist UI
+jsPDF · FileSaver.js
+Medium
+F-12
+Grant methods generator
+Scientist UI
+GPT-4o (existing key)
+Low
+F-13
+Equipment checklist
+Scientist UI
+GPT-4o + Supabase
+Low
+F-14
+Hypothesis refinement AI
+Scientist UI
+GPT-4o (existing key)
+Low
+F-15
+Live collaborative review
+Collaboration
+Supabase Realtime
+High
+F-16
+Plan version history
+Collaboration
+Supabase (existing)
+Medium
+F-17
+Lab notebook template
+Collaboration
+GPT-4o + PDF export
+Medium
+CATEGORY A — Intelligence Layer
+Purpose:  These features replace the original single-source Semantic Scholar search with a parallel 5-database literature engine, deep reagent intelligence from PubChem, protocol similarity search, and clinical trial monitoring. All APIs are completely free with no rate-limit issues for hackathon-scale traffic.
+Feature F-01  Multi-Source Literature Engine
+Replaces the single Semantic Scholar call with a parallel fan-out across 5 databases. Results are deduplicated by DOI and ranked by a composite score (citation count, recency, abstract relevance). This dramatically improves the QC node's recall — a paper missed by one source is almost always caught by another.
+Databases & APIs
+Database
+API Endpoint
+Key Required?
+Strength
+Rate Limit
+PubMed / NCBI
+https://eutils.ncbi.nlm.nih.gov/entrez/eutils/
+No
+Gold standard biomedical
+10 req/s (anon)
+OpenAlex
+https://api.openalex.org/works
+No
+200M+ works, great filters
+100K req/day
+Europe PMC
+https://www.ebi.ac.uk/europepmc/webservices/rest/
+No
+Strong EU research + preprints
+No stated limit
+bioRxiv / medRxiv
+https://api.biorxiv.org/details/
+No
+Latest preprints (not yet peer-reviewed)
+No stated limit
+Semantic Scholar
+https://api.semanticscholar.org/graph/v1/
+Yes (existing)
+Best abstract quality
+100 req/s (with key)
+Backend Implementation
+New node:  app/graph/nodes/multi_literature_qc.py
+# app/graph/nodes/multi_literature_qc.py
+import asyncio, httpx
+from app.graph.state import ExperimentState
+async def fetch_pubmed(query: str) -> list[dict]:
+    base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+    async with httpx.AsyncClient(timeout=12) as c:
+        search = await c.get(f"{base}/esearch.fcgi",
+            params={"db":"pubmed","term":query,"retmax":5,"retmode":"json","usehistory":"y"})
+        ids = search.json()["esearchresult"]["idlist"]
+        if not ids: return []
+        fetch  = await c.get(f"{base}/efetch.fcgi",
+            params={"db":"pubmed","id":",".join(ids),"rettype":"abstract","retmode":"xml"})
+    return parse_pubmed_xml(fetch.text)
+async def fetch_openalex(query: str) -> list[dict]:
+    url = "https://api.openalex.org/works"
+    async with httpx.AsyncClient(timeout=12) as c:
+        r = await c.get(url, params={"search": query, "per-page": 5,
+            "filter": "is_oa:true", "sort": "cited_by_count:desc",
+            "mailto": "ai-scientist@yourdomain.com"})
+    return [parse_openalex_work(w) for w in r.json().get('results',[])]
+async def fetch_biorxiv(query: str) -> list[dict]:
+    url = "https://api.biorxiv.org/details/biorxiv/2024-01-01/2025-12-31/0/json"
+    async with httpx.AsyncClient(timeout=12) as c:
+        r = await c.get(url)
+    all_papers = r.json().get('collection',[])
+    q_words = set(query.lower().split())
+    return [p for p in all_papers if any(w in p.get('title','').lower() for w in q_words)][:5]
+async def multi_literature_qc_node(state: ExperimentState) -> ExperimentState:
+    hypothesis = state['hypothesis']
+    # Run all searches in parallel
+    results = await asyncio.gather(
+        fetch_pubmed(hypothesis[:200]),
+        fetch_openalex(hypothesis[:200]),
+        fetch_biorxiv(hypothesis[:150]),
+        fetch_semantic_scholar(hypothesis[:200]),   # existing function
+        return_exceptions=True
+    )
+    # Flatten and deduplicate by DOI
+    papers = deduplicate_by_doi([p for batch in results
+                                 if isinstance(batch, list) for p in batch])
+    # Rank by composite score: citations * 0.6 + recency * 0.4
+    ranked = sorted(papers, key=composite_score, reverse=True)[:8]
+    # Let GPT-4o classify novelty as before
+    from app.services.openai_client import classify_novelty
+    novelty, refs = await classify_novelty(hypothesis, ranked)
+    return {**state, 'novelty_signal': novelty, 'qc_references': refs}
+Frontend Display
+Source badge on every reference card shows which database it came from (PubMed / OpenAlex / bioRxiv / Europe PMC / S2).
+'Coverage summary' chip shows: 'Searched 5 databases · 23 papers found · 6 after deduplication · 3 shown'.
+bioRxiv preprints are clearly flagged with an amber 'PREPRINT — not peer-reviewed' badge.
+Feature F-02  Reagent Intelligence Engine
+For every reagent in the generated materials list, automatically fetches authoritative data from PubChem: molecular weight, CAS number, InChI key, GHS hazard codes, and 3 cheaper supplier alternatives. This transforms the materials table from a shopping list into a full chemical reference that a lab manager can act on immediately.
+PubChem API Reference
+Data Point
+PubChem Endpoint
+Example
+Compound CID
+GET /compound/name/{name}/cids/JSON
+GET /compound/name/trehalose/cids/JSON
+Molecular weight
+GET /compound/cid/{cid}/property/MolecularWeight/JSON
+→ 342.3 g/mol
+CAS number
+GET /compound/cid/{cid}/xrefs/RN/JSON
+→ 99-20-7
+GHS hazard codes
+GET /compound/cid/{cid}/classification/JSON
+→ H302, H319 (eye irritant)
+Synonyms (alt. names)
+GET /compound/cid/{cid}/synonyms/JSON
+→ alpha,alpha-Trehalose; Mycose
+Safety data sheet URL
+GET /compound/cid/{cid}/xrefs/SDSL/JSON
+Sigma-Aldrich SDS link
+Service Implementation
+# app/services/pubchem.py
+import httpx
+from functools import lru_cache
+PUBCHEM = 'https://pubchem.ncbi.nlm.nih.gov/rest/pug'
+async def enrich_reagent(name: str) -> dict:
+    """Fetch full PubChem data for a reagent name."""
+    async with httpx.AsyncClient(timeout=10) as c:
+        # Step 1: resolve name to CID
+        r = await c.get(f'{PUBCHEM}/compound/name/{name}/cids/JSON')
+        if r.status_code != 200: return {'name': name, 'pubchem_found': False}
+        cid = r.json()['IdentifierList']['CID'][0]
+        # Step 2: fetch properties in one call
+        props = ['MolecularWeight','MolecularFormula','IUPACName','IsomericSMILES']
+        pr = await c.get(f'{PUBCHEM}/compound/cid/{cid}/property/{",".join(props)}/JSON')
+        p = pr.json()['PropertyTable']['Properties'][0]
+        # Step 3: GHS hazard codes
+        hr = await c.get(f'{PUBCHEM}/compound/cid/{cid}/classification/JSON')
+        ghs = extract_ghs_codes(hr.json())
+        # Step 4: CAS number
+        casr = await c.get(f'{PUBCHEM}/compound/cid/{cid}/xrefs/RN/JSON')
+        cas = casr.json().get('InformationList',{}).get('Information',[{}])[0].get('RN',[])
+    return {
+        'cid': cid, 'name': name, 'pubchem_found': True,
+        'molecular_weight': p.get('MolecularWeight'),
+        'molecular_formula': p.get('MolecularFormula'),
+        'cas_number': cas[0] if cas else None,
+        'ghs_codes': ghs,
+        'pubchem_url': f'https://pubchem.ncbi.nlm.nih.gov/compound/{cid}',
+    }
+Database Schema Addition
+-- Add to experiment_plans table (or a separate reagent_details table)
+ALTER TABLE experiment_plans ADD COLUMN reagent_details JSONB;
+-- reagent_details shape: [{name, cas_number, molecular_weight, ghs_codes,
+--   pubchem_url, cheaper_alternatives: [{name, catalog_no, supplier, price}]}]
+Frontend UI
+Each reagent row in the Materials tab gets an expandable drawer showing: CAS number, MW, GHS hazard pictograms (rendered as SVG icons), PubChem link, and a 'Cheaper alternatives' section with 3 options.
+GHS codes are rendered as colour-coded badges: red for acute toxicity (H300–H310), amber for health hazard, blue for environmental.
+A 'Total safety summary' at the top of the Materials tab shows the highest BSL level required by any reagent in the list.
+Feature F-03  Protocol Similarity Search
+Before generating the experiment plan, queries protocols.io for the 5 most similar published protocols. These are shown to the user and also injected into the GPT-4o prompt as grounding context — dramatically improving the realism and specificity of the generated protocol steps.
+API Integration
+Base URL:  https://www.protocols.io/api/v4/protocols
+Key Required:  Public token (free, register at protocols.io)
+Auth Header:  Authorization: Bearer <public_token>
+Search Param:  ?filter=public&key=<query>&page_size=5&order_field=citation_count&order_dir=desc
+Response Fields:  title, uri, doi, published_on, stats.number_of_steps, stats.number_of_citations, authors
+# app/services/protocols_io.py
+import httpx; from app.config import settings
+async def search_protocols(query: str) -> list[dict]:
+    async with httpx.AsyncClient(timeout=12) as c:
+        r = await c.get('https://www.protocols.io/api/v4/protocols',
+            params={'filter':'public','key':query[:150],'page_size':5,
+                    'order_field':'citation_count','order_dir':'desc'},
+            headers={'Authorization': f'Bearer {settings.PROTOCOLS_IO_TOKEN}'})
+    if r.status_code != 200: return []
+    items = r.json().get('items', [])
+    return [{'title':p['title'],'doi':p.get('doi'),'url':p.get('uri'),
+             'citations':p['stats']['number_of_citations'],
+             'steps':p['stats']['number_of_steps'],
+             'published':p.get('published_on')} for p in items]
+Prompt Injection
+The top 2 matched protocols are injected into the plan_generator prompt:
+SIMILAR_PROTOCOLS_CONTEXT = '''
+The following published protocols on protocols.io are most similar to this experiment.
+Use them as methodological anchors — align step structure, reagent concentrations,
+and incubation times with these validated approaches where applicable:
+Protocol 1: {title} ({citations} citations, {steps} steps)
+DOI: {doi}
+Protocol 2: {title} ({citations} citations, {steps} steps)
+DOI: {doi}
+'''
+Feature F-04  Clinical Trials Radar
+Checks whether any active, recruiting, or recently completed clinical trials are already testing a similar hypothesis. Prevents a scientist from investing months in a bench experiment that duplicates an ongoing human study — a real and costly mistake in translational research.
+API Reference
+Base URL:  https://clinicaltrials.gov/api/v2/studies
+Key Required:  No — completely open
+Key Parameters:  query.term · filter.overallStatus · pageSize · fields
+# app/services/clinical_trials.py
+import httpx
+CT_BASE = 'https://clinicaltrials.gov/api/v2/studies'
+ACTIVE_STATUSES = 'RECRUITING,ACTIVE_NOT_RECRUITING,NOT_YET_RECRUITING,COMPLETED'
+async def check_clinical_trials(hypothesis: str) -> dict:
+    keywords = extract_key_terms(hypothesis)  # GPT-4o extracts 3-5 key terms
+    async with httpx.AsyncClient(timeout=10) as c:
+        r = await c.get(CT_BASE, params={
+            'query.term': ' AND '.join(keywords),
+            'filter.overallStatus': ACTIVE_STATUSES,
+            'pageSize': 5,
+            'fields': 'NCTId,BriefTitle,OverallStatus,Phase,StartDate,Condition'})
+    studies = r.json().get('studies', [])
+    return {
+        'total_found': r.json().get('totalCount', 0),
+        'studies': [{'nct_id': s['protocolSection']['identificationModule']['nctId'],
+                     'title': s['protocolSection']['identificationModule']['briefTitle'],
+                     'status': s['protocolSection']['statusModule']['overallStatus'],
+                     'url': f'https://clinicaltrials.gov/study/{nct_id}'}
+                    for s in studies[:3]]}
+UI Display Logic
+If 0 matching trials: green badge 'No overlapping clinical trials found — clear to proceed'.
+If 1–3 trials: amber badge 'Active clinical trials detected' with expandable list and links to ClinicalTrials.gov.
+If 3+ trials: red badge 'High clinical trial overlap — consider refining hypothesis scope'.
+CATEGORY B — Plan Quality
+Purpose:  These four features turn the generated plan from a reasonable starting point into something a journal reviewer would approve. They address the most common criticisms of AI-generated experiment plans: under-powered sample sizes, poor reproducibility, missing safety information, and one-size-fits-all protocol design.
+Feature F-05  Statistical Power Calculator
+An interactive, embedded sample size and power calculator built into the Validation tab. This is the single most-requested feature by actual scientists reviewing AI-generated plans — underpowered studies are the leading cause of irreproducible results. The calculator covers the four most common experimental designs in life sciences.
+Supported Statistical Tests
+Test
+Use Case
+Key Inputs
+Formula Used
+Two-sample t-test
+Compare two group means (most common)
+Effect size (d), alpha, power
+Cohen's d; scipy.stats.norm
+One-way ANOVA
+Compare 3+ group means
+Effect size (f), alpha, power, groups
+G*Power ANOVA formula
+Chi-squared
+Categorical outcome (e.g. survival %)
+Expected proportions, alpha, power
+ES.w; pwr package equivalent
+Survival / Log-rank
+Time-to-event experiments
+Median survival ratio, alpha, power
+Schoenfeld formula
+Frontend Component
+File: components/plan-viewer/power-calculator.tsx
+// Power calculator — pure TypeScript, no external API
+function calculateSampleSize(effectSize: number, alpha: number, power: number): number {
+  // Two-sample t-test (two-tailed) using iterative normal CDF approximation
+  const z_alpha = normalQuantile(1 - alpha / 2)  // e.g. 1.96 for alpha=0.05
+  const z_beta  = normalQuantile(power)           // e.g. 0.84 for power=0.80
+  const n = 2 * Math.pow((z_alpha + z_beta) / effectSize, 2)
+  return Math.ceil(n)  // per group
+}
+// GPT-4o pre-populates suggested effect size based on experiment domain
+// e.g. for cell viability assays: d=0.8 (large), alpha=0.05, power=0.80
+// Scientist can adjust sliders and see n update in real-time
+Backend — GPT-4o Effect Size Suggestion
+Added to plan_generator node — GPT-4o suggests effect size as part of JSON output:
+"power_analysis": {
+  "recommended_test": "two_sample_t_test",
+  "suggested_effect_size": 0.8,
+  "effect_size_rationale": "Based on prior HeLa viability literature (Cohen 1988).",
+  "suggested_alpha": 0.05,
+  "suggested_power": 0.80,
+  "calculated_n_per_group": 26,
+  "total_sample_size": 52
+}
+Feature F-06  Reproducibility Scorer
+After plan generation, a second GPT-4o call scores the plan against 10 criteria drawn from the ARRIVE 2.0 guidelines (animal research), TOP guidelines (open science), and Nature Reporting Summary requirements. The score is shown as a 0–100 gauge with colour-coded criteria and specific, actionable improvement suggestions for each failure.
+Scoring Criteria
+#
+Criterion
+Guideline Source
+Max Points
+R1
+Sample size justification with power analysis
+ARRIVE 2.0 / TOP
+12
+R2
+Explicit inclusion/exclusion criteria for subjects
+ARRIVE 2.0
+10
+R3
+Randomisation method specified
+ARRIVE 2.0
+10
+R4
+Blinding procedure described (if applicable)
+ARRIVE 2.0
+10
+R5
+Positive and negative controls included
+Nature Reporting
+12
+R6
+Statistical test pre-specified with assumptions stated
+TOP Level 2
+10
+R7
+Primary outcome clearly distinguished from secondary
+TOP Level 1
+8
+R8
+Reagent catalog numbers and lot numbers mentioned
+Nature Reporting
+10
+R9
+Data sharing / deposition plan mentioned
+TOP Level 3
+8
+R10
+Protocol registered or registerable (e.g. OSF)
+TOP Level 3
+10
+Implementation
+# app/services/reproducibility_scorer.py
+SCORER_PROMPT = '''
+You are a senior scientific reviewer applying ARRIVE 2.0 and TOP guidelines.
+Score the following experiment plan on each criterion from 0 to its max_points.
+Return ONLY valid JSON with this schema:
+{
+  "total_score": <int>,
+  "criteria": [{"id":"R1","score":<int>,"max":12,"issue":"...","suggestion":"..."}]
+}
+'''
+async def score_reproducibility(plan: dict) -> dict:
+    response = await openai_client.chat.completions.create(
+        model='gpt-4o', response_format={'type':'json_object'},
+        messages=[{'role':'system','content':SCORER_PROMPT},
+                  {'role':'user','content': f'Plan: {json.dumps(plan)}'}])
+    return json.loads(response.choices[0].message.content)
+Feature F-07  Risk & Safety Assessment
+Automatically generates a safety briefing for the experiment: biosafety level requirements, IACUC / IRB approval flags, GHS hazard codes for every reagent, PPE requirements, waste disposal categories, and emergency response procedures. This is not optional for any real lab — it is a legal requirement before experiments begin.
+Safety Assessment Output Schema
+"safety_assessment": {
+  "bsl_level": 2,                            // 1 | 2 | 3 | 4
+  "bsl_rationale": "HeLa cells are BSL-2...",
+  "requires_iacuc": false,                   // true if vertebrate animals used
+  "requires_irb": false,                     // true if human subjects used
+  "requires_biosafety_committee": true,       // true if BSL-2+
+  "ppe_required": ["nitrile gloves","lab coat","safety glasses","face shield"],
+  "hazardous_reagents": [
+    {"name":"DMSO","ghs_codes":["H360"],"hazard":"Reproductive toxin",
+     "ppe_addition":"chemical splash goggles required","disposal":"halogenated waste"}
+  ],
+  "waste_disposal": {
+    "biological": "Autoclave then standard waste",
+    "chemical": "Halogenated solvent container",
+    "sharps": "Sharps container required"
+  },
+  "emergency_contacts": ["Lab safety officer","Campus EH&S: 911 + extension"]
+}
+Frontend Display
+Safety Assessment renders as a dedicated 'Safety' tab (6th tab after Validation) with a BSL badge prominently at the top.
+IACUC / IRB flags appear as prominent red banners if triggered: 'This experiment requires IACUC approval before starting. Contact your IACUC office.'
+Each hazardous reagent shows its GHS pictogram (skull for acute toxicity, flame for flammable, etc.) as inline SVG icons.
+Feature F-08  Three Protocol Variants
+Instead of generating a single protocol, GPT-4o generates three variants simultaneously: Budget (minimise cost, use most widely available reagents), Standard (balance cost and quality), and Premium (highest quality reagents and equipment, maximum sensitivity). A comparison table helps the scientist choose based on their available budget and resources.
+GPT-4o Prompt Structure
+# The plan_generator node sends one API call with a structured output schema
+# that requires THREE complete protocol objects in the response JSON:
+"variants": {
+  "budget": {
+    "total_cost_usd": 850,
+    "timeline_weeks": 6,
+    "key_tradeoffs": "Uses Bradford assay (lower sensitivity) instead of BCA...",
+    "protocol": [...],  // same schema as standard plan
+    "materials": [...]
+  },
+  "standard": {"total_cost_usd": 1800, "timeline_weeks": 5, ...},
+  "premium": {
+    "total_cost_usd": 4200,
+    "timeline_weeks": 4,
+    "key_advantages": "Flow cytometry provides single-cell resolution...",
+    "protocol": [...],
+    "materials": [...]
+  }
+}
+Frontend
+Three variant cards at top of Plan tab with cost and timeline prominently shown.
+Scientist clicks one card to 'activate' that variant — the full plan below updates to show the selected variant's details.
+A side-by-side comparison table shows key differences: total cost, timeline, key reagent substitutions, sensitivity impact.
+CATEGORY C — Scientist-Grade UI Features
+Purpose:  These six features transform the plan viewer from a read-only document into an interactive scientific workbench. Real scientists need to visualise protocols, reschedule timelines, export materials for procurement, and generate grant-ready language — all without leaving the tool. All UI libraries used are MIT-licensed and free.
+Feature F-09  Interactive Protocol Flowchart
+The Protocol tab renders the step-by-step procedure as an interactive directed graph using React Flow. Each node represents one protocol step; edges show the flow. Clicking a node opens a detail panel with full description, duration, materials used, and safety notes. Decision points (e.g. 'If cell viability < 70%, repeat step') are rendered as diamond nodes with branching edges.
+React Flow Setup
+Library:  @xyflow/react (formerly reactflow) — MIT license
+Install:  npm install @xyflow/react
+Bundle Size:  ~180KB gzipped — acceptable for a science tool
+// components/plan-viewer/protocol-flowchart.tsx
+import { ReactFlow, Background, Controls, MiniMap } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+function protocolToNodes(protocol: ProtocolStep[]) {
+  return protocol.map((step, i) => ({
+    id: String(i),
+    type: step.is_decision ? 'diamond' : 'step',
+    position: { x: 300, y: i * 140 },
+    data: {
+      label: step.title,
+      duration: step.duration_hours,
+      materials: step.materials_used,
+      safety: step.safety_notes,
+    }}))
+}
+function protocolToEdges(protocol: ProtocolStep[]) {
+  return protocol.slice(0,-1).map((_,i) => ({
+    id: `e${i}-${i+1}`, source: String(i), target: String(i+1),
+    animated: true, label: protocol[i].expected_output ?? ''
+  }))
+}
+export function ProtocolFlowchart({ protocol }: { protocol: ProtocolStep[] }) {
+  const [selected, setSelected] = useState<ProtocolStep | null>(null)
+  return (
+    <div style={{ height: 600 }}>
+      <ReactFlow nodes={protocolToNodes(protocol)} edges={protocolToEdges(protocol)}
+        nodeTypes={{ step: StepNode, diamond: DecisionNode }}
+        onNodeClick={(_, node) => setSelected(node.data)}
+        fitView>
+        <Background /> <Controls /> <MiniMap />
+      </ReactFlow>
+      {selected && <StepDetailPanel step={selected} onClose={() => setSelected(null)} />}
+    </div>
+  )
+}
+Backend Schema Addition
+# Add to each protocol step in plan_generator prompt output schema:
+"protocol": [{
+  "step_number": 1,
+  "title": "Cell seeding",
+  "description": "Seed 5x10^4 HeLa cells per well in a 96-well plate...",
+  "duration_hours": 24,
+  "materials_used": ["HeLa cells (ATCC CCL-2)","DMEM + 10% FBS"],
+  "safety_notes": "Work in BSL-2 cabinet. Wear gloves and lab coat.",
+  "expected_output": "Confluent monolayer (70-80%)",
+  "is_decision": false,
+  "decision_branches": null
+}]
+Feature F-10  Real-Time Gantt Timeline
+The Timeline tab renders an interactive Gantt chart using Frappe Gantt (lightweight, MIT-licensed, no backend required). Scientists can drag task bars to reschedule, click to edit task names, and export the chart as PNG for lab meeting presentations. Dependencies between phases are shown with arrows.
+Library:  frappe-gantt — MIT license, ~85KB
+Install:  npm install frappe-gantt
+Docs:  https://frappe.io/gantt
+// components/plan-viewer/gantt-timeline.tsx
+import Gantt from 'frappe-gantt'
+import 'frappe-gantt/dist/frappe-gantt.css'
+function timelineToGanttTasks(timeline: TimelinePhase[]): GanttTask[] {
+  return timeline.map(phase => ({
+    id: phase.phase.replace(/\s+/g, '_'),
+    name: phase.phase,
+    start: weekToDate(phase.week_start),   // converts 'Week 1' -> ISO date
+    end:   weekToDate(phase.week_end),
+    progress: 0,
+    dependencies: phase.depends_on ?? ''
+  }))
+}
+export function GanttTimeline({ timeline }: { timeline: TimelinePhase[] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!ref.current) return
+    const g = new Gantt(ref.current, timelineToGanttTasks(timeline), {
+      view_mode: 'Week',
+      on_click: task => showTaskDetail(task),
+      on_date_change: (task, start, end) => updateTimeline(task.id, start, end),
+    })
+    return () => g.destroy()
+  }, [timeline])
+  return <div ref={ref} className='gantt-container' />
+}
+Feature F-11  Export Suite
+Four one-click export formats, all generated client-side in the browser with no server call required. This means zero server cost and instant download.
+Export Format
+Content
+Library
+File Extension
+PDF Lab Report
+Full formatted report: QC results, all plan sections, safety assessment, references
+jsPDF + jsPDF-AutoTable
+plan_report.pdf
+CSV Materials List
+Reagent table ready for procurement: name, catalog_no, supplier, qty, unit_cost
+Papa Parse (for CSV generation)
+materials.csv
+iCal Timeline
+Each timeline phase as a calendar event with task descriptions in the body
+ics.js (MIT)
+experiment_timeline.ics
+DOCX Methods Section
+Grant-ready Methods section generated by GPT-4o and exported as Word doc
+docx.js (MIT)
+methods_section.docx
+// lib/exports.ts
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { saveAs } from 'file-saver'
+export function exportMaterialsCSV(materials: Material[]) {
+  const headers = ['Name','Catalog No.','Supplier','Unit','Qty','Unit Cost (USD)','Total Cost (USD)']
+  const rows = materials.map(m =>
+    [m.name, m.catalog_no, m.supplier, m.unit, m.quantity, m.unit_cost_usd, m.total_cost_usd])
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  saveAs(blob, 'materials_list.csv')
+}
+export function exportPDFReport(experiment: ExperimentFull) {
+  const pdf = new jsPDF()
+  pdf.setFontSize(20); pdf.text('Experiment Plan Report', 20, 20)
+  pdf.setFontSize(12); pdf.text(`Hypothesis: ${experiment.hypothesis}`, 20, 35)
+  autoTable(pdf, { head: [['Step','Description','Duration']], body:
+    experiment.plan.protocol.map(s => [s.step_number, s.title, `${s.duration_hours}h`]),
+    startY: 50 })
+  pdf.save('experiment_plan.pdf')
+}
+Feature F-12  Grant Methods Generator
+A dedicated 'Grant Language' tab that uses GPT-4o to rewrite the protocol in formal NIH / NSF / ERC Methods section language. The output is structured exactly as required by each funding body's application guidelines: past tense, third person, with statistical methods described in the format required by study section reviewers.
+# app/graph/nodes/grant_methods_generator.py
+GRANT_PROMPT = '''
+You are an experienced grant writer with a track record of NIH R01 and NSF awards.
+Rewrite the following experiment plan as a formal Methods section suitable for submission
+to {grant_body} ({grant_body_full}).
+Requirements:
+  - Past tense, third person (e.g. 'Cells were seeded at 5x10^4 per well...')
+  - All reagents must include source and catalog number on first mention
+  - Statistical analysis paragraph must appear at the end, specifying:
+    test used, alpha level, power, software (e.g. GraphPad Prism 10)
+  - Include a sentence about institutional approval (e.g. IACUC) if applicable
+  - Target length: 400-600 words
+  - Use passive voice throughout
+Output only the Methods section text — no preamble, no headers.
+'''
+async def generate_grant_methods(plan: dict, grant_body: str = 'NIH') -> str:
+    grant_map = {'NIH':'National Institutes of Health R01',
+                 'NSF':'National Science Foundation',
+                 'ERC':'European Research Council'}
+    prompt = GRANT_PROMPT.format(grant_body=grant_body,
+                                 grant_body_full=grant_map.get(grant_body,''))
+    r = await openai_client.chat.completions.create(
+        model='gpt-4o', temperature=0.3, max_tokens=1000,
+        messages=[{'role':'system','content':prompt},
+                  {'role':'user','content':f'Plan: {json.dumps(plan)}'}])
+    return r.choices[0].message.content
+Feature F-13  Equipment Checklist
+GPT-4o generates a complete equipment list for the experiment. The scientist checks off which items their lab already has. Items they are missing are flagged with: estimated purchase cost, rental options via equipment-sharing networks, and core facility alternatives (e.g. 'Confocal microscope → use University Core Imaging Facility').
+# Equipment list added to plan_generator output schema:
+"equipment_required": [
+  {
+    "name": "CO2 Incubator",
+    "category": "Cell culture",
+    "model_suggestion": "Thermo Scientific Heracell 150i",
+    "est_purchase_usd": 8500,
+    "is_commonly_available": true,
+    "core_facility_alternative": null,
+    "rental_available": false
+  },
+  {
+    "name": "Flow cytometer",
+    "category": "Analysis",
+    "model_suggestion": "BD FACSCanto II",
+    "est_purchase_usd": 85000,
+    "is_commonly_available": false,
+    "core_facility_alternative": "University Core Cytometry Facility — book via iLab",
+    "rental_available": true
+  }
+]
+Supabase Persistence
+-- Track which equipment a lab has (persisted per user/lab)
+CREATE TABLE lab_equipment (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lab_id      TEXT NOT NULL,  -- optional: lab identifier
+  equipment   TEXT NOT NULL,  -- normalised equipment name
+  has_item    BOOLEAN DEFAULT TRUE,
+  notes       TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+-- Equipment checklist memory persists across experiments for the same lab
+Feature F-14  Hypothesis Refinement AI
+Before the main pipeline runs, a lightweight hypothesis analysis step checks whether the submitted hypothesis meets scientific testability standards. If it scores below 70, the user is shown 3 improved rewrites with explanations. They can choose one or edit further before the main pipeline begins — preventing wasted GPT-4o tokens on vague inputs.
+Scoring Rubric
+Criterion
+Max Score
+What GPT-4o Checks For
+Specificity
+25
+Does it name the exact organism, cell line, or reagent?
+Measurability
+25
+Does it specify a measurable outcome (%, fold-change, ng/mL)?
+Comparison
+20
+Does it include a comparison group or control?
+Timeframe
+15
+Does it specify a duration or endpoint?
+Novelty potential
+15
+Does it go beyond simple replication of a standard protocol?
+# app/graph/nodes/hypothesis_refiner.py
+REFINE_PROMPT = '''
+Score the following scientific hypothesis on 5 criteria (0-100 total).
+If score < 70, provide exactly 3 improved alternative hypotheses.
+Return ONLY valid JSON:
+{
+  "score": <int>,
+  "criteria": {"specificity":<int>,"measurability":<int>,"comparison":<int>,
+               "timeframe":<int>,"novelty_potential":<int>},
+  "weaknesses": ["..."],
+  "suggested_rewrites": [{"hypothesis":"...","improvement_rationale":"..."}]
+}
+'''
+CATEGORY D — Collaboration & Learning
+Purpose:  These three features transform The AI Scientist from a single-user tool into a team platform. Real research is collaborative — PIs, postdocs, and technicians all interact with the same plan. Supabase Realtime (already provisioned) provides WebSocket infrastructure at zero additional cost. Plan versioning and lab notebooks complete the research workflow.
+Feature F-15  Live Collaborative Review
+Multiple scientists can open the same experiment plan simultaneously and see each other's cursors, annotations, and review submissions in real-time. This uses Supabase Realtime channels — a WebSocket layer built into the Supabase instance already provisioned. No additional infrastructure is required.
+Architecture
+# Supabase Realtime uses Presence + Broadcast + Postgres Changes
+# 1. PRESENCE — track who is viewing the plan
+const channel = supabase.channel(`plan-review-${planId}`)
+channel.on('presence', { event: 'sync' }, () => {
+  const state = channel.presenceState()
+  setActiveScienstists(Object.values(state).flat())
+})
+channel.track({ user_id: currentUser.id, role: currentUser.role, joined_at: new Date().toISOString() })
+# 2. BROADCAST — real-time annotation events
+channel.on('broadcast', { event: 'annotation' }, ({ payload }) => {
+  addAnnotation(payload)  // adds floating comment bubble to the relevant section
+})
+# 3. POSTGRES CHANGES — when a review is submitted, all viewers see it immediately
+channel.on('postgres_changes', {
+  event: 'INSERT', schema: 'public', table: 'scientist_reviews',
+  filter: `plan_id=eq.${planId}`
+}, payload => {
+  addReviewCard(payload.new)
+})
+channel.subscribe()
+Presence UI
+Active reviewers appear as avatar initials in the top-right corner of the plan page (PI in purple, Postdoc in teal, Technician in green).
+When a reviewer is looking at a specific section, that section's header shows a small coloured dot: 'PI is viewing Protocol tab'.
+Submitted reviews appear in a live feed sidebar without page refresh — no polling required.
+Section-level annotations (floating comment bubbles) are broadcast to all viewers instantly.
+Supabase Configuration
+-- Enable Realtime for relevant tables in Supabase dashboard:
+-- Table Editor → scientist_reviews → Enable Realtime (INSERT, UPDATE)
+-- Table Editor → experiment_plans   → Enable Realtime (UPDATE)
+-- Add plan_annotations table for floating comments:
+CREATE TABLE plan_annotations (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id      UUID REFERENCES experiment_plans(id) ON DELETE CASCADE,
+  section      TEXT NOT NULL,
+  content      TEXT NOT NULL,
+  position_pct FLOAT,   -- % position within the section (for anchoring the bubble)
+  author_id    TEXT,
+  author_role  TEXT,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE plan_annotations ENABLE ROW LEVEL SECURITY;
+Feature F-16  Plan Version History
+Every time a plan is regenerated or a scientist requests a revision, a versioned snapshot is stored. A diff view shows exactly what changed between versions — highlighted in green for additions and red for removals, section by section. Scientists can restore any previous version with one click.
+Database Schema
+CREATE TABLE plan_versions (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  experiment_id   UUID REFERENCES experiments(id) ON DELETE CASCADE,
+  version_number  INTEGER NOT NULL,
+  plan_snapshot   JSONB NOT NULL,   -- complete plan at this point in time
+  change_summary  TEXT,             -- GPT-4o-generated summary of what changed
+  triggered_by    TEXT,             -- 'initial_generation' | 'scientist_correction'
+                                   -- | 'hypothesis_edit' | 'manual_regen'
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX plan_versions_unique
+  ON plan_versions(experiment_id, version_number);
+Diff Algorithm
+Plan diffs are computed client-side using the fast-diff library (MIT, ~5KB):
+import diff from 'fast-diff'  // MIT license
+function diffPlanSection(oldText: string, newText: string): DiffChunk[] {
+  return diff(oldText, newText).map(([type, value]) => ({
+    type: type === 1 ? 'added' : type === -1 ? 'removed' : 'unchanged',
+    text: value
+  }))
+}
+// Renders as inline HTML with green highlights for additions, red for removals
+// Applied per-section: protocol diffs show step-level changes
+// Materials diffs show added/removed rows in the reagent table
+Version Timeline UI
+A horizontal version rail appears at the top of the Plan view when 2+ versions exist.
+Each version node shows: version number, date, and trigger (e.g. 'v1 · Initial' / 'v2 · After PI review' / 'v3 · Hypothesis refined').
+Clicking any node loads that version; clicking two nodes enters diff mode.
+'Restore this version' button triggers a new plan_versions record and sets it as the current plan.
+Feature F-17  Lab Notebook Template
+Generates a structured electronic lab notebook pre-filled with all experiment parameters from the plan. The notebook is exported as a PDF with fillable sections for the scientist to complete as they run the experiment. This is the bridge between the AI planning tool and the actual bench work — a scientist walks into the lab with this document.
+Notebook Structure
+Section
+Pre-filled By
+Scientist Fills In
+Header
+Hypothesis, PI name, date, experiment ID
+Start date, lab location
+Objective
+Plan summary from GPT-4o
+—
+Materials received
+Materials table from plan
+Lot numbers, expiry dates, actual supplier used
+Protocol steps
+Protocol steps as numbered checklist
+Actual observations per step, deviations
+Raw data tables
+Column headers from validation section
+Measured values
+Statistical analysis
+Test name, alpha, n from power calculator
+Computed p-values, confidence intervals
+Conclusions
+Expected success/failure criteria
+Actual outcome vs expected
+Deviations log
+—
+Free text: any protocol deviations and rationale
+# app/services/notebook_generator.py
+NOTEBOOK_PROMPT = '''
+Using the experiment plan provided, generate a structured lab notebook template
+as JSON. Each section should have a 'title', 'instructions' for the scientist,
+and 'fields' array defining what to fill in.
+The notebook must include:
+1. A materials receipt log with lot number and expiry date fields for each reagent
+2. A step-by-step protocol checklist with observation fields after each step
+3. Raw data entry tables with pre-defined column headers
+4. A statistical calculations section
+5. A conclusions section comparing actual vs expected outcomes
+6. A deviations log
+'''
+# The PDF export uses jsPDF on the frontend with pre-populated fields
+# and blank underlines for scientist to fill in by hand or digitally
+Updated Database Schema — Full Table List
+The following tables are required across all 17 features. Tables marked * are new additions beyond the primary report.
+Table
+New / Existing
+Purpose
+Key Feature
+experiments
+Existing
+Core experiment record
+All
+literature_qc_results
+Existing
+QC results per experiment
+F-01
+experiment_plans
+Existing
+Full generated plan JSON
+All plan features
+scientist_reviews
+Existing
+Section-level reviews
+F-15, F-06
+feedback_store
+Existing
+pgvector few-shot feedback
+Stretch Goal
+plan_versions *
+NEW
+Versioned plan snapshots
+F-16
+plan_annotations *
+NEW
+Real-time floating comments
+F-15
+lab_equipment *
+NEW
+Per-lab equipment inventory
+F-13
+clinical_trial_results *
+NEW
+ClinicalTrials.gov results cache
+F-04
+protocol_matches *
+NEW
+protocols.io similarity results
+F-03
+Complete Migration Script
+-- Run in Supabase SQL Editor AFTER the primary report's schema is in place
+-- F-16: Plan version history
+CREATE TABLE plan_versions (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  experiment_id  UUID REFERENCES experiments(id) ON DELETE CASCADE,
+  version_number INTEGER NOT NULL,
+  plan_snapshot  JSONB NOT NULL,
+  change_summary TEXT,
+  triggered_by   TEXT,
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+-- F-15: Real-time annotations
+CREATE TABLE plan_annotations (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id      UUID REFERENCES experiment_plans(id) ON DELETE CASCADE,
+  section      TEXT NOT NULL, content TEXT NOT NULL,
+  position_pct FLOAT, author_id TEXT, author_role TEXT,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+-- F-13: Lab equipment inventory
+CREATE TABLE lab_equipment (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lab_id     TEXT NOT NULL, equipment TEXT NOT NULL,
+  has_item   BOOLEAN DEFAULT TRUE, notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- F-04: Clinical trials cache (to avoid hammering the API)
+CREATE TABLE clinical_trial_results (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  experiment_id UUID REFERENCES experiments(id) ON DELETE CASCADE,
+  total_found   INTEGER, studies JSONB, queried_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- F-03: Protocol similarity cache
+CREATE TABLE protocol_matches (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  experiment_id UUID REFERENCES experiments(id) ON DELETE CASCADE,
+  matches JSONB, queried_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- Enable RLS on all new tables
+ALTER TABLE plan_versions       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plan_annotations    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lab_equipment       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE clinical_trial_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE protocol_matches    ENABLE ROW LEVEL SECURITY;
+-- Enable Realtime for collaborative features
+-- (Do this in Supabase Dashboard > Table Editor > [table] > Enable Realtime)
+-- Tables to enable: scientist_reviews, plan_annotations, experiment_plans
+Updated requirements.txt — Full Backend Dependencies
+# ── Core (from primary report) ───────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.1
+langgraph==0.2.35
+langchain==0.3.7
+langchain-openai==0.2.9
+openai==1.52.0
+httpx==0.27.2
+supabase==2.9.0
+pydantic-settings==2.5.2
+sse-starlette==2.1.3
+# ── New for Advanced Features ─────────────────────────────────────────────────
+lxml==5.3.0                   # PubMed XML parsing (F-01)
+xmltodict==0.14.2              # PubMed / Europe PMC XML to dict (F-01)
+tenacity==9.0.0               # Retry logic for external API calls (F-01, F-03, F-04)
+cachetools==5.5.0             # In-memory LRU cache for PubChem calls (F-02)
+python-docx==1.2.0            # DOCX export for grant methods (F-11)
+reportlab==4.2.5              # PDF lab notebook generation (F-17)
+icalendar==6.0.1              # iCal timeline export (F-11)
+Updated package.json — Full Frontend Dependencies
+{
+  "dependencies": {
+    "next": "14.2.15",
+    "react": "^18.3.1",
+    "@supabase/supabase-js": "^2.45.4",
+    "@tanstack/react-query": "^5.59.0",
+    "zustand": "^5.0.1",
+    "tailwindcss": "^3.4.13",
+    "lucide-react": "^0.453.0",
+    "framer-motion": "^11.11.7",
+    "// ── New for Advanced Features ────────────────────────────────": "",
+    "@xyflow/react": "^12.3.0",      // F-09: Protocol flowchart (MIT)
+    "frappe-gantt": "^0.6.1",         // F-10: Gantt timeline (MIT)
+    "jspdf": "^2.5.1",                // F-11: PDF export (MIT)
+    "jspdf-autotable": "^3.8.2",      // F-11: PDF tables (MIT)
+    "file-saver": "^2.0.5",           // F-11: Browser file save (MIT)
+    "ics": "^3.7.2",                  // F-11: iCal export (MIT)
+    "fast-diff": "^1.3.0",            // F-16: Plan diff (MIT)
+    "docx": "^8.5.0"                  // F-11: DOCX methods export (MIT)
+  }
+}
+Implementation Priority & Effort Guide
+Not all 17 features need to be built for day-one submission. The table below ranks features by impact/effort ratio — build high-impact, low-effort features first to maximise demo impressiveness within the hackathon timeline.
+Feature
+Impact
+Effort
+Priority
+Recommended Day
+F-14 Hypothesis refinement
+★★★★★
+Low
+P0 — Build first
+Day 1
+F-06 Reproducibility scorer
+★★★★★
+Low
+P0 — Build first
+Day 1
+F-08 Three protocol variants
+★★★★★
+Low
+P0 — Build first
+Day 2
+F-05 Statistical power calc
+★★★★★
+Low
+P0 — Build first
+Day 2
+F-01 Multi-source literature
+★★★★☆
+Medium
+P1 — High value
+Day 3
+F-02 Reagent intelligence
+★★★★☆
+Medium
+P1 — High value
+Day 3
+F-07 Risk & safety
+★★★★☆
+Medium
+P1 — High value
+Day 4
+F-12 Grant methods generator
+★★★★☆
+Low
+P1 — High value
+Day 4
+F-09 Protocol flowchart
+★★★★☆
+Medium
+P1 — High value
+Day 4
+F-11 Export suite
+★★★☆☆
+Medium
+P2 — Nice to have
+Day 5
+F-16 Version history
+★★★☆☆
+Medium
+P2 — Nice to have
+Day 5
+F-03 Protocol similarity
+★★★☆☆
+Medium
+P2 — Nice to have
+Day 5
+F-04 Clinical trials radar
+★★★☆☆
+Low
+P2 — Nice to have
+Day 5
+F-13 Equipment checklist
+★★★☆☆
+Low
+P2 — Nice to have
+Day 6
+F-17 Lab notebook
+★★★☆☆
+Medium
+P2 — Nice to have
+Day 6
+F-15 Live collaboration
+★★★★☆
+High
+P1 — Demo moment
+Day 6
+F-10 Gantt timeline
+★★★☆☆
+High
+P3 — If time permits
+Day 7
+The AI Scientist — Advanced Features Spec v1.0  |  April 2026  |  17 Features  |  100% Free Services

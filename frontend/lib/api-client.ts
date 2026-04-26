@@ -46,9 +46,9 @@ class APIClient {
   ): Promise<T> {
     const token = await this.getAuthToken();
     
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers as Record<string, string> || {}),
     };
 
     // Add authorization header if token is available
@@ -151,7 +151,7 @@ class APIClient {
   async startPlanGeneration(request: GeneratePlanRequest): Promise<Response> {
     const token = await this.getAuthToken();
     
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 

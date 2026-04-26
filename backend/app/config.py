@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # External APIs
     serper_api_key: str
     semantic_scholar_api_key: str
+    protocols_io_token: str = ""
     
     # LangSmith Configuration
     langchain_tracing_v2: str = "true"

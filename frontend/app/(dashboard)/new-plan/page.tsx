@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -70,7 +70,7 @@ export default function NewPlanPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   ), []);
   const router = useRouter();
-  const { toast } = useToast();
+
 
   // Form state
   const [hypothesis, setHypothesis] = useState('');
@@ -135,7 +135,7 @@ export default function NewPlanPage() {
         if (stage) {
           updateStage(stage, { status: 'running', progress: 5, message: data.description || 'Starting...' });
           addLiveMessage(`▶ ${STAGES.find(s => s.id === stage)?.label} started`, 'info');
-          toast({ title: `Stage started`, description: STAGES.find(s => s.id === stage)?.label });
+          toast.info(`Stage started: ${STAGES.find(s => s.id === stage)?.label}`);
         }
         break;
 
@@ -157,8 +157,7 @@ export default function NewPlanPage() {
             detail: JSON.stringify(data.result_summary ?? {}),
           });
           addLiveMessage(`✓ ${STAGES.find(s => s.id === stage)?.label} done in ${data.duration?.toFixed(1)}s`, 'success');
-          toast({
-            title: `✓ ${STAGES.find(s => s.id === stage)?.label}`,
+          toast.success(`✓ ${STAGES.find(s => s.id === stage)?.label}`, {
             description: `Completed in ${data.duration?.toFixed(1)}s`,
           });
         }
@@ -169,7 +168,7 @@ export default function NewPlanPage() {
         setError(data.message || 'An error occurred');
         setIsGenerating(false);
         addLiveMessage(`✗ Error: ${data.message}`, 'warning');
-        toast({ variant: 'destructive', title: 'Pipeline Error', description: data.message });
+        toast.error(`Pipeline Error`, { description: data.message });
         break;
 
       case EventType.COMPLETE:
@@ -178,8 +177,7 @@ export default function NewPlanPage() {
         setCompletedPlanId(data.plan_id ?? null);
         setIsGenerating(false);
         addLiveMessage(`🎉 Plan generated! Redirecting...`, 'success');
-        toast({
-          title: '🎉 Experiment Plan Ready!',
+        toast.success('🎉 Experiment Plan Ready!', {
           description: `Generated in ${data.total_duration?.toFixed(1)}s. Redirecting to your plan...`,
         });
         if (data.plan_id) {
@@ -192,7 +190,7 @@ export default function NewPlanPage() {
   const handleSubmit = useCallback(async () => {
     const h = hypothesis.trim();
     if (!h || h.length < 10) {
-      toast({ variant: 'destructive', title: 'Too short', description: 'Please enter at least 10 characters.' });
+      toast.error('Too short', { description: 'Please enter at least 10 characters.' });
       return;
     }
 
@@ -265,7 +263,7 @@ export default function NewPlanPage() {
       setError(msg);
       setIsGenerating(false);
       addLiveMessage(`✗ ${msg}`, 'warning');
-      toast({ variant: 'destructive', title: 'Generation Failed', description: msg });
+      toast.error('Generation Failed', { description: msg });
     }
   }, [hypothesis, supabase, handleSSEEvent, addLiveMessage, toast]);
 
@@ -295,7 +293,7 @@ export default function NewPlanPage() {
 
         {/* ── Header ── */}
         <div className="text-center mb-10 fade-in-up">
-          <div className="inline-flex items-center gap-2 bg-white/80 border border-blue-100 rounded-full px-4 py-1.5 text-sm text-blue-700 font-medium mb-4 shadow-sm">
+          <div className="inline-flex items-center gap-2 bg-card text-card-foreground/80 border border-blue-100 rounded-full px-4 py-1.5 text-sm text-blue-700 font-medium mb-4 shadow-sm">
             <Sparkles className="h-3.5 w-3.5" />
             Powered by GPT-4o + LangGraph
           </div>
@@ -314,14 +312,14 @@ export default function NewPlanPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 mb-6"
+              className="bg-card text-card-foreground rounded-2xl shadow-lg border border-border p-6 mb-6"
             >
               <div className="flex items-center gap-2 mb-4">
                 <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center">
                   <FlaskConical className="h-4 w-4 text-white" />
                 </div>
                 <div>
-                  <h2 className="font-semibold text-gray-900">Your Hypothesis</h2>
+                  <h2 className="font-semibold text-foreground">Your Hypothesis</h2>
                   <p className="text-xs text-muted-foreground">Be specific — include measurements, comparisons, and methods</p>
                 </div>
               </div>
@@ -392,11 +390,11 @@ export default function NewPlanPage() {
               className="space-y-4"
             >
               {/* Overall progress bar */}
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+              <div className="bg-card text-card-foreground rounded-2xl shadow-lg border border-border p-6">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
-                    <span className="font-semibold text-gray-900">Generating your plan...</span>
+                    <span className="font-semibold text-foreground">Generating your plan...</span>
                   </div>
                   <span className="text-2xl font-bold text-blue-600">{Math.round(overallProgress)}%</span>
                 </div>
@@ -415,28 +413,28 @@ export default function NewPlanPage() {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: idx * 0.1 }}
-                      className={`bg-white rounded-xl border-2 p-4 transition-all duration-300 ${
-                        s.status === 'running' ? `${stage.bg} stage-active` :
-                        s.status === 'done'    ? 'border-green-200 bg-green-50' :
-                        s.status === 'error'   ? 'border-red-200 bg-red-50' :
-                        'border-gray-100'
+                      className={`relative overflow-hidden bg-background/60 backdrop-blur-md text-card-foreground rounded-xl border p-4 transition-all duration-500 ${
+                        s.status === 'running' ? `border-[${stage.color}] shadow-[0_0_20px_rgba(59,130,246,0.3)] ring-1 ring-blue-500/50` :
+                        s.status === 'done'    ? 'border-green-500/30 bg-green-500/5' :
+                        s.status === 'error'   ? 'border-red-500/30 bg-red-500/5' :
+                        'border-white/10'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                          s.status === 'running' ? 'bg-blue-100' :
-                          s.status === 'done'    ? 'bg-green-100' :
-                          s.status === 'error'   ? 'bg-red-100' :
-                          'bg-gray-100'
+                        <div className={`h-12 w-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
+                          s.status === 'running' ? 'bg-blue-500/20 text-blue-400' :
+                          s.status === 'done'    ? 'bg-green-500/20 text-green-400' :
+                          s.status === 'error'   ? 'bg-red-500/20 text-red-400' :
+                          'bg-muted/50 text-muted-foreground'
                         }`}>
-                          {s.status === 'running' ? <Loader2 className={`h-5 w-5 ${stage.color} animate-spin`} /> :
-                           s.status === 'done'    ? <CheckCircle2 className="h-5 w-5 text-green-600" /> :
-                           s.status === 'error'   ? <AlertCircle className="h-5 w-5 text-red-600" /> :
-                           <Icon className="h-5 w-5 text-gray-400" />}
+                          {s.status === 'running' ? <Loader2 className={`h-6 w-6 animate-spin`} /> :
+                           s.status === 'done'    ? <CheckCircle2 className="h-6 w-6" /> :
+                           s.status === 'error'   ? <AlertCircle className="h-6 w-6" /> :
+                           <Icon className="h-6 w-6" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
-                            <span className="font-medium text-sm text-gray-900">{stage.label}</span>
+                            <span className="font-medium text-sm text-foreground">{stage.label}</span>
                             <div className="flex items-center gap-2">
                               {s.duration && (
                                 <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -447,7 +445,7 @@ export default function NewPlanPage() {
                                 s.status === 'running' ? 'default' :
                                 s.status === 'done'    ? 'secondary' :
                                 s.status === 'error'   ? 'destructive' : 'outline'
-                              } className="text-xs">
+                              } className={s.status === 'running' ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : ''}>
                                 {s.status === 'idle' ? stage.estimate :
                                  s.status === 'running' ? 'Running' :
                                  s.status === 'done'    ? 'Done' : 'Error'}
@@ -467,39 +465,56 @@ export default function NewPlanPage() {
                 })}
               </div>
 
-              {/* Live activity feed */}
-              <div className="bg-gray-900 rounded-xl p-4 font-mono text-xs">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="flex gap-1">
-                    <div className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                    <div className="h-2.5 w-2.5 rounded-full bg-yellow-500" />
-                    <div className="h-2.5 w-2.5 rounded-full bg-green-500" />
+              {/* Live activity feed - Advanced Terminal style */}
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="bg-[#0a0a0c] border border-blue-500/20 shadow-[0_0_30px_rgba(59,130,246,0.1)] rounded-xl p-5 font-mono text-xs relative overflow-hidden"
+              >
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
+                <div className="flex items-center gap-2 mb-4 pb-3 border-b border-white/5">
+                  <div className="flex gap-1.5">
+                    <div className="h-3 w-3 rounded-full bg-red-500/80 shadow-[0_0_5px_rgba(239,68,68,0.5)]" />
+                    <div className="h-3 w-3 rounded-full bg-yellow-500/80 shadow-[0_0_5px_rgba(234,179,8,0.5)]" />
+                    <div className="h-3 w-3 rounded-full bg-green-500/80 shadow-[0_0_5px_rgba(34,197,94,0.5)]" />
                   </div>
-                  <span className="text-gray-400 text-xs">Live Activity</span>
-                  <div className="ml-auto flex items-center gap-1 text-green-400">
-                    <div className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-                    <span>streaming</span>
+                  <span className="text-blue-400/70 text-xs font-semibold uppercase tracking-widest ml-2">Secure Terminal</span>
+                  <div className="ml-auto flex items-center gap-2 text-blue-400 bg-blue-500/10 px-2 py-1 rounded-full border border-blue-500/20">
+                    <div className="h-2 w-2 rounded-full bg-blue-400 animate-pulse shadow-[0_0_8px_rgba(96,165,250,0.8)]" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider">Live Stream</span>
                   </div>
                 </div>
-                <div ref={liveRef} className="space-y-1 max-h-32 overflow-y-auto">
+                <div ref={liveRef} className="space-y-1.5 max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-blue-500/20 scrollbar-track-transparent pr-2">
                   {liveMessages.length === 0 ? (
-                    <span className="text-gray-500">Initializing pipeline...</span>
+                    <div className="flex items-center gap-2 text-blue-400/50">
+                      <span className="animate-pulse">&gt;</span>
+                      <span>Initializing quantum parameters...</span>
+                    </div>
                   ) : (
                     liveMessages.map(m => (
-                      <div key={m.id} className={`flex gap-2 ${
-                        m.type === 'success' ? 'text-green-400' :
-                        m.type === 'warning' ? 'text-red-400' : 'text-gray-300'
-                      }`}>
-                        <span className="text-gray-600 flex-shrink-0">
-                          {m.timestamp.toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      <motion.div 
+                        initial={{ opacity: 0, x: -5 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        key={m.id} 
+                        className={`flex gap-3 leading-relaxed ${
+                          m.type === 'success' ? 'text-green-400' :
+                          m.type === 'warning' ? 'text-red-400' : 'text-blue-200/80'
+                        }`}
+                      >
+                        <span className="text-blue-500/50 flex-shrink-0 select-none">
+                          [{m.timestamp.toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
                         </span>
-                        <span>{m.text}</span>
-                      </div>
+                        <span className="flex-1">{m.text}</span>
+                      </motion.div>
                     ))
                   )}
-                  <span className="text-gray-600 typing-cursor" />
+                  <div className="flex items-center gap-2 text-blue-400 mt-2">
+                    <span>&gt;</span>
+                    <span className="w-2 h-4 bg-blue-400 animate-pulse" />
+                  </div>
                 </div>
-              </div>
+              </motion.div>
 
               {/* Cancel button */}
               <div className="text-center">
@@ -517,7 +532,7 @@ export default function NewPlanPage() {
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-white rounded-2xl shadow-xl border-2 border-green-200 p-8 text-center"
+              className="bg-card text-card-foreground rounded-2xl shadow-xl border-2 border-green-200 p-8 text-center"
             >
               <motion.div
                 initial={{ scale: 0 }}
@@ -527,7 +542,7 @@ export default function NewPlanPage() {
               >
                 <CheckCircle2 className="h-10 w-10 text-green-600" />
               </motion.div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Plan Generated! 🎉</h2>
+              <h2 className="text-2xl font-bold text-foreground mb-2">Plan Generated! 🎉</h2>
               <p className="text-muted-foreground mb-6">
                 Your complete experiment plan is ready. Redirecting you now...
               </p>
@@ -552,12 +567,12 @@ export default function NewPlanPage() {
               { icon: Shield,      label: 'Real Catalog #s',  sub: 'Verified' },
               { icon: Star,        label: 'RAG Learning',     sub: 'Improves over time' },
             ].map(f => (
-              <div key={f.label} className="bg-white/80 rounded-xl border border-gray-100 p-3 flex items-center gap-3 card-hover">
+              <div key={f.label} className="bg-card text-card-foreground/80 rounded-xl border border-border p-3 flex items-center gap-3 card-hover">
                 <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
                   <f.icon className="h-4 w-4 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">{f.label}</p>
+                  <p className="text-sm font-semibold text-foreground">{f.label}</p>
                   <p className="text-xs text-muted-foreground">{f.sub}</p>
                 </div>
               </div>

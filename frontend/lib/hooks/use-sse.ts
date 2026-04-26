@@ -56,7 +56,8 @@ export function useSSE(): UseSSEResult {
       };
 
       // Handle specific event types
-      eventSource.addEventListener(EventType.PROGRESS, (event) => {
+      eventSource.addEventListener(EventType.PROGRESS, (e) => {
+        const event = e as MessageEvent;
         try {
           const data = JSON.parse(event.data);
           onMessage(data);
@@ -65,7 +66,8 @@ export function useSSE(): UseSSEResult {
         }
       });
 
-      eventSource.addEventListener(EventType.ERROR, (event) => {
+      eventSource.addEventListener(EventType.ERROR, (e) => {
+        const event = e as MessageEvent;
         try {
           const data = JSON.parse(event.data);
           onMessage(data);
@@ -75,7 +77,8 @@ export function useSSE(): UseSSEResult {
         }
       });
 
-      eventSource.addEventListener(EventType.COMPLETE, (event) => {
+      eventSource.addEventListener(EventType.COMPLETE, (e) => {
+        const event = e as MessageEvent;
         try {
           const data = JSON.parse(event.data);
           onMessage(data);
@@ -85,7 +88,8 @@ export function useSSE(): UseSSEResult {
         }
       });
 
-      eventSource.addEventListener(EventType.STAGE_START, (event) => {
+      eventSource.addEventListener(EventType.STAGE_START, (e) => {
+        const event = e as MessageEvent;
         try {
           const data = JSON.parse(event.data);
           onMessage(data);
@@ -94,7 +98,8 @@ export function useSSE(): UseSSEResult {
         }
       });
 
-      eventSource.addEventListener(EventType.STAGE_COMPLETE, (event) => {
+      eventSource.addEventListener(EventType.STAGE_COMPLETE, (e) => {
+        const event = e as MessageEvent;
         try {
           const data = JSON.parse(event.data);
           onMessage(data);

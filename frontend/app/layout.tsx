@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { SSEProvider } from '@/components/providers/sse-provider'
-import { Toaster } from '@/components/ui/toaster'
+import { Toaster as SonnerToaster } from 'sonner'
+import { ThemeProvider } from '@/components/theme-provider'
+import { CursorParticles } from '@/components/cursor-particles'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -26,16 +28,24 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <SSEProvider>
-          <div className="min-h-screen bg-background font-sans antialiased">
-            <div className="relative flex min-h-screen flex-col">
-              <div className="flex-1">
-                {children}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          forcedTheme="dark"
+          disableTransitionOnChange
+        >
+          <SSEProvider>
+            <CursorParticles />
+            <div className="relative z-10 min-h-screen font-sans antialiased">
+              <div className="flex min-h-screen flex-col">
+                <div className="flex-1">
+                  {children}
+                </div>
               </div>
             </div>
-          </div>
-          <Toaster />
-        </SSEProvider>
+            <SonnerToaster position="bottom-right" richColors closeButton />
+          </SSEProvider>
+        </ThemeProvider>
       </body>
     </html>
   )
