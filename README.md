@@ -1,4 +1,5 @@
 # AI Scientist Platform
+Live Link : mit-hackathon-rq61.vercel.app
 
 > **From hypothesis to lab-ready protocol in under 90 seconds.**
 >
