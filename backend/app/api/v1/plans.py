@@ -295,7 +295,7 @@ async def get_plan(
         try:
             rating_result = db.rpc(
                 "get_average_plan_rating",
-                {"plan_id_param": plan_id}
+                {"plan_uuid": plan_id}
             ).execute()
             average_rating = float(rating_result.data) if rating_result.data else None
         except Exception:
