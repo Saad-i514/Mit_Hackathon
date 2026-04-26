@@ -10,7 +10,7 @@ langchain-openai==0.2.9
 langsmith==0.1.147
 
 # OpenAI
-openai==1.52.0
+openai==1.54.0
 
 # Database
 supabase==2.9.0
