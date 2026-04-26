@@ -42,7 +42,7 @@ export function GanttTimeline({ timeline, onTaskClick, onReschedule }: GanttTime
           const m = String(d).match(/\d+/);
           return m ? parseInt(m[0]) : null;
         })
-        .filter((d: any) => d !== null && d !== phase.phase_number);
+        .filter((d: any): d is number => d !== null && d !== phase.phase_number);
 
       return { ...phase, start_date: fmt(startDate), end_date: fmt(endDate), duration_days: durationDays, _deps: deps };
     });
