@@ -1,7 +1,7 @@
 """
 Response models for API endpoints
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -177,6 +177,8 @@ class PaginatedResponse(BaseModel):
 
 class ExperimentPlanMetadata(BaseModel):
     """Metadata for experiment plan"""
+    model_config = ConfigDict(protected_namespaces=())
+
     generated_at: str
     model_version: str = "gpt-4o"
     few_shot_examples_used: int = 0
@@ -206,6 +208,8 @@ class ExperimentPlan(BaseModel):
 
 class ExperimentPlanResponse(BaseModel):
     """Response for experiment plan retrieval"""
+    model_config = ConfigDict(protected_namespaces=())
+
     id: str
     user_id: str
     hypothesis_id: str
