@@ -12,23 +12,23 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
     # OpenAI Configuration
-    openai_api_key: str
+    openai_api_key: str = ""
     openai_model: str = "gpt-4o"
     
     # Supabase Configuration
-    supabase_url: str
-    supabase_anon_key: str
-    supabase_service_key: str
-    supabase_jwt_secret: str
+    supabase_url: str = ""
+    supabase_anon_key: str = ""
+    supabase_service_key: str = ""
+    supabase_jwt_secret: str = ""
     supabase_db_password: str = ""
     
     # External APIs
-    serper_api_key: str
-    semantic_scholar_api_key: str
+    serper_api_key: str = ""
+    semantic_scholar_api_key: str = ""
     protocols_io_token: str = ""
     
     # LangSmith Configuration
-    langchain_tracing_v2: str = "true"
+    langchain_tracing_v2: str = "false"
     langchain_api_key: str = ""
     langchain_project: str = "ai-scientist-platform"
     langchain_endpoint: str = "https://api.smith.langchain.com"

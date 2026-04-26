@@ -7,21 +7,27 @@ from app.config import settings
 
 
 class DatabaseClient:
-    """Supabase database client wrapper"""
-    
+    """Supabase database client wrapper — lazy initialization"""
+
     def __init__(self):
-        """Initialize Supabase client with service key for full access"""
-        self.client: Client = create_client(
-            settings.supabase_url,
-            settings.supabase_service_key
-        )
-    
+        self._client: Optional[Client] = None
+
     def get_client(self) -> Client:
-        """Get the Supabase client instance"""
-        return self.client
+        """Get or create the Supabase client instance"""
+        if self._client is None:
+            if not settings.supabase_url or not settings.supabase_service_key:
+                raise RuntimeError(
+                    "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set. "
+                    "Add them as environment variables in Railway."
+                )
+            self._client = create_client(
+                settings.supabase_url,
+                settings.supabase_service_key
+            )
+        return self._client
 
 
-# Global database client instance
+# Global database client instance (lazy)
 db_client = DatabaseClient()
 
 
